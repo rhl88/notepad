@@ -1,0 +1,92 @@
+{
+    "id": "cmspro.notepad",
+    "name": "记事本",
+    "description": "后台便签记录与协作应用，支持便签管理、留言评论、推送提醒，基于管理员账号体系实现权限控制",
+    "version": "1.0.1",
+    "author": "CmsPro",
+    "icon": "fa fa-sticky-note",
+    "require": {
+        "php": ">=8.3",
+        "cmspro": ">=5.0.0"
+    },
+    "providers": [
+        "ServiceProvider"
+    ],
+    "install": "Install",
+    "menus": [
+        {
+            "title": "记事本",
+            "icon": "fa fa-sticky-note",
+            "path": "/admin/cmspro/notepad",
+            "code": "admin_cmspro_notepad",
+            "order": 100,
+            "children": [
+                {
+                    "title": "便签列表",
+                    "icon": "fa fa-list",
+                    "path": "/admin/cmspro/notepad/notes",
+                    "code": "admin_cmspro_notepad_notes",
+                    "order": 1
+                },
+                {
+                    "title": "记事本设置",
+                    "icon": "fa fa-cog",
+                    "path": "/admin/cmspro/notepad/settings",
+                    "code": "admin_cmspro_notepad_settings",
+                    "order": 2
+                }
+            ]
+        }
+    ],
+    "config_groups": [
+        {
+            "name": "notepad_settings",
+            "title": "记事本设置",
+            "items": [
+                {
+                    "name": "per_page",
+                    "title": "每页便签数",
+                    "type": "number",
+                    "value": "20",
+                    "tips": "便签列表每页显示数量"
+                },
+                {
+                    "name": "max_content_length",
+                    "title": "内容最大长度",
+                    "type": "number",
+                    "value": "5000",
+                    "tips": "便签内容的最大字符数"
+                },
+                {
+                    "name": "max_push_targets",
+                    "title": "推送人数上限",
+                    "type": "number",
+                    "value": "10",
+                    "tips": "单次推送最多可指定管理员数量"
+                }
+            ]
+        }
+    ],
+    "permissions": [
+        {
+            "code": "cmspro.notepad.manage",
+            "name": "便签管理"
+        },
+        {
+            "code": "cmspro.notepad.create",
+            "name": "创建便签"
+        },
+        {
+            "code": "cmspro.notepad.edit",
+            "name": "编辑便签"
+        },
+        {
+            "code": "cmspro.notepad.delete",
+            "name": "删除便签"
+        },
+        {
+            "code": "cmspro.notepad.push",
+            "name": "推送便签"
+        }
+    ]
+}

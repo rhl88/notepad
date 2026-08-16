@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#667eea"/>
+      <stop offset="100%" style="stop-color:#764ba2"/>
+    </linearGradient>
+  </defs>
+  <!-- 背景圆角矩形 -->
+  <rect x="5" y="5" width="110" height="110" rx="20" ry="20" fill="url(#bg)"/>
+  <!-- 便签主体 -->
+  <rect x="28" y="22" width="56" height="72" rx="4" ry="4" fill="#fff" opacity="0.95"/>
+  <!-- 便签折角 -->
+  <path d="M70 22 L84 22 L84 36 Z" fill="#e8e0f0"/>
+  <path d="M70 22 L70 36 L84 36 Z" fill="#d4c8e0"/>
+  <!-- 文字横线 -->
+  <line x1="36" y1="42" x2="76" y2="42" stroke="#667eea" stroke-width="2.5" stroke-linecap="round" opacity="0.6"/>
+  <line x1="36" y1="54" x2="72" y2="54" stroke="#667eea" stroke-width="2.5" stroke-linecap="round" opacity="0.5"/>
+  <line x1="36" y1="66" x2="68" y2="66" stroke="#667eea" stroke-width="2.5" stroke-linecap="round" opacity="0.4"/>
+  <line x1="36" y1="78" x2="60" y2="78" stroke="#667eea" stroke-width="2.5" stroke-linecap="round" opacity="0.3"/>
+  <!-- 铅笔 -->
+  <g transform="translate(72, 68) rotate(-45)">
+    <rect x="0" y="-4" width="28" height="8" rx="1" fill="#FFB800"/>
+    <rect x="24" y="-4" width="8" height="8" rx="0" fill="#FF8C00"/>
+    <polygon points="0,-4 0,4 -5,0" fill="#333"/>
+    <rect x="28" y="-3" width="3" height="6" fill="#e0e0e0"/>
+  </g>
+  <!-- 右上角小红点提醒 -->
+  <circle cx="86" cy="26" r="10" fill="#f5576c"/>
+  <text x="86" y="31" text-anchor="middle" fill="#fff" font-size="13" font-weight="bold" font-family="Arial">N</text>
+</svg>
