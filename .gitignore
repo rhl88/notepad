@@ -1,0 +1,17 @@
+# 敏感文件
+.env
+.env.*
+
+# 运行产物
+*.exe
+*.bak
+*.tmp
+*.log
+
+# 虚拟环境
+venv/
+node_modules/
+
+# 系统文件
+Thumbs.db
+.DS_Store

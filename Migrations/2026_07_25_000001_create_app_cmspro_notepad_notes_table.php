@@ -31,7 +31,10 @@ return new class extends Migration
             $table->index('pinned');
         });
 
-        DB::statement("ALTER TABLE `app_cmspro_notepad_notes` COMMENT '记事本便签表'");
+        // COMMENT 为 MySQL 方言，仅 MySQL 驱动执行，保证 SQLite 等测试环境可迁移
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE `app_cmspro_notepad_notes` COMMENT '记事本便签表'");
+        }
     }
 
     public function down(): void

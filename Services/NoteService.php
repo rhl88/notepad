@@ -177,7 +177,12 @@ class NoteService
 
         foreach ($allowedFields as $field) {
             if (array_key_exists($field, $data)) {
-                $updateData[$field] = $data[$field];
+                $value = $data[$field];
+                // 颜色字段空值规范化：null 统一转为空字符串，避免违反列非空约束（default ''）
+                if ($field === 'color' && $value === null) {
+                    $value = '';
+                }
+                $updateData[$field] = $value;
             }
         }
 

@@ -1,6 +1,6 @@
 # CmsPro-记事本应用文档
 
-> 版本：v1.0.0 | 创建日期：2026-08-12
+> 版本：v1.0.1 | 创建日期：2026-08-12
 > 适用系统：CmsPro v5.0.0+
 > 应用 ID：`cmspro.notepad`
 
@@ -112,7 +112,7 @@
 | GET | `/api/notes/unread-count` | NoteController::unreadCount | - | `{code:0, data:{count}}` 未读推送数 |
 | GET | `/api/notes/{id}` | NoteController::show | - | 便签详情（含 comments.adminUser、pushes.toUser）；无权查看返回 403 |
 | POST | `/api/notes` | NoteController::store | title（<=200 必填）、content、priority、color、pinned | `{code:0, data:便签, message:"创建成功"}` |
-| PUT | `/api/notes/{id}` | NoteController::update | title、content、priority、color、pinned（可部分提交） | `{code:0, message:"更新成功"}`；非本人返回 403 |
+| PUT | `/api/notes/{id}` | NoteController::update | title、content、priority、color、pinned（可部分提交） | `{code:0, message:"更新成功"}`；非本人返回 403；color 为 null 或空时统一存为空字符串（默认无色） |
 | PUT | `/api/notes/{id}/toggle-status` | NoteController::toggleStatus | - | 0↔1 切换完成状态，`{message:"已标记为已完成/未完成"}` |
 | DELETE | `/api/notes/{id}` | NoteController::destroy | - | 级联删除评论与推送记录 |
 | POST | `/api/notes/batch-delete` | NoteController::batchDelete | ids[] | `{message:"成功删除X条便签"}`（仅统计本人拥有的） |
@@ -223,4 +223,5 @@ max_push_targets = 10
 
 | 版本 | 日期 | 更新人 | 变更内容 |
 |------|------|--------|----------|
+| v1.0.1 | 2026-08-20 | 开发团队 | 修复编辑便签时「标记颜色」未选择导致更新报错（color 为 null 违反列非空约束），后端统一将 color 空值规范化为空字符串；迁移表注释语句增加 MySQL 方言兼容判断，保证 SQLite 等测试环境可迁移 |
 | v1.0.0 | 2026-08-12 | 开发团队 | 初始版本 |
