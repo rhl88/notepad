@@ -1,48 +1,8 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>控制台</title>
-    <link rel="stylesheet" href="{{ asset('CmsProUi/component/pear/css/pear.css') }}">
-    <link rel="stylesheet" href="{{ asset('CmsProUi/font-awesome/4.7.0/css/font-awesome.min.css') }}">
-    <link rel="stylesheet" href="{{ asset('Admin/css/admin.css') }}">
-    <link rel="stylesheet" href="{{ asset('Admin/css/variables.css') }}">
-    <link rel="stylesheet" href="{{ asset('Admin/css/reset.css') }}">
-    <style>
-    .stat-card {
-        padding: 20px;
-        border-radius: 4px;
-        color: #fff;
-        position: relative;
-        overflow: hidden;
-    }
-    .stat-card .stat-icon {
-        position: absolute;
-        right: 15px;
-        top: 50%;
-        transform: translateY(-50%);
-        font-size: 50px;
-        opacity: 0.2;
-    }
-    .stat-card .stat-title {
-        font-size: 14px;
-        margin-bottom: 8px;
-    }
-    .stat-card .stat-value {
-        font-size: 28px;
-        font-weight: bold;
-    }
-    .stat-bg-blue { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
-    .stat-bg-green { background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); }
-    .stat-bg-orange { background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); }
-    .stat-bg-cyan { background: linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%); }
-    .stat-bg-red { background: linear-gradient(135deg, #f5576c 0%, #ff6a88 100%); }
-    .info-table { width: 100%; }
-    .info-table td { padding: 10px 15px; }
-    .info-table .label { width: 120px; color: #666; font-weight: 500; }
-    .info-table .value { color: #333; }
-    .note-panel { margin-top: 0; }
+{{-- 记事本仪表盘扩展片段（非完整页面） --}}
+{{-- 由 DashboardController::index() 渲染后插入框架 admin.dashboard： --}}
+{{-- <script> 之前的样式与 HTML 插到"系统信息"卡片之前；脚本插到 </body> 之前（确保 layui.js/pear.js 已加载） --}}
+{{-- 框架已提供：页面骨架、静态资源引入、CSRF/401 处理、统计卡片与统计 AJAX，此处不再重复 --}}
+<style>
     .note-panel .note-item {
         padding: 10px 15px;
         border-bottom: 1px solid #f0f0f0;
@@ -115,147 +75,40 @@
         padding: 0 15px;
     }
 </style>
-</head>
-<body>
-<div class="pear-container">
-    {{-- 欢迎区域 --}}
-    <div class="layui-card" style="padding: 10px;">
-        <div class="layui-card-body" style="text-align: center; padding: 30px;">
-            <h2 style="color: #333; margin-bottom: 10px;">欢迎回来，<span id="admin-name">{{ auth()->user()->name ?? '管理员' }}</span></h2>
-            <p style="color: #999;">CmsPro 内容管理系统</p>
-        </div>
-    </div>
 
-    {{-- 统计卡片（原4个 + 新增便签卡片） --}}
-    <div class="layui-row layui-col-space15" style="padding: 10px;">
-        <div class="layui-col-md3">
-            <div class="stat-card stat-bg-blue">
-                <div class="stat-title">用户总数</div>
-                <div class="stat-value" id="stat-users">0</div>
-                <div class="stat-icon"><i class="fa fa-users"></i></div>
+{{-- 便签工具 + 未读提醒 --}}
+<div class="layui-row layui-col-space15" style="padding: 10px;">
+    <div class="layui-col-md6">
+        <div class="layui-card note-panel">
+            <div class="layui-card-header panel-header">
+                <span><i class="fa fa-sticky-note" style="color:#667eea;margin-right:5px;"></i>我的便签 <span id="note-pending-badge" style="display:none;background:#ff5722;color:#fff;font-size:11px;padding:1px 6px;border-radius:8px;margin-left:5px;">0</span></span>
+                <a href="javascript:;" onclick="openNotesList()">查看全部 <i class="fa fa-angle-right"></i></a>
             </div>
-        </div>
-        <div class="layui-col-md3">
-            <div class="stat-card stat-bg-green">
-                <div class="stat-title">角色数量</div>
-                <div class="stat-value" id="stat-roles">0</div>
-                <div class="stat-icon"><i class="fa fa-shield"></i></div>
+            <div class="layui-card-body" style="padding:0;max-height:300px;overflow-y:auto;" id="my-notes-list">
+                <div class="empty-tip"><i class="fa fa-sticky-note" style="font-size:24px;"></i><br>暂无便签</div>
             </div>
-        </div>
-        <div class="layui-col-md3">
-            <div class="stat-card stat-bg-orange">
-                <div class="stat-title">菜单数量</div>
-                <div class="stat-value" id="stat-menus">0</div>
-                <div class="stat-icon"><i class="fa fa-bars"></i></div>
-            </div>
-        </div>
-        <div class="layui-col-md3">
-            <div class="stat-card stat-bg-cyan">
-                <div class="stat-title">附件数量</div>
-                <div class="stat-value" id="stat-attachments">0</div>
-                <div class="stat-icon"><i class="fa fa-file"></i></div>
+            <div class="quick-add-bar">
+                <input type="text" id="quick-note-input" placeholder="快速创建便签..." maxlength="200">
+                <button class="layui-btn layui-btn-sm layui-btn-normal" onclick="quickAddNote()"><i class="fa fa-plus"></i> 添加</button>
             </div>
         </div>
     </div>
-
-    {{-- 便签工具 + 未读提醒 --}}
-    <div class="layui-row layui-col-space15" style="padding: 10px;">
-        <div class="layui-col-md6">
-            <div class="layui-card note-panel">
-                <div class="layui-card-header panel-header">
-                    <span><i class="fa fa-sticky-note" style="color:#667eea;margin-right:5px;"></i>我的便签 <span id="note-pending-badge" style="display:none;background:#ff5722;color:#fff;font-size:11px;padding:1px 6px;border-radius:8px;margin-left:5px;">0</span></span>
-                    <a href="javascript:;" onclick="openNotesList()">查看全部 <i class="fa fa-angle-right"></i></a>
-                </div>
-                <div class="layui-card-body" style="padding:0;max-height:300px;overflow-y:auto;" id="my-notes-list">
-                    <div class="empty-tip"><i class="fa fa-sticky-note" style="font-size:24px;"></i><br>暂无便签</div>
-                </div>
-                <div class="quick-add-bar">
-                    <input type="text" id="quick-note-input" placeholder="快速创建便签..." maxlength="200">
-                    <button class="layui-btn layui-btn-sm layui-btn-normal" onclick="quickAddNote()"><i class="fa fa-plus"></i> 添加</button>
-                </div>
+    <div class="layui-col-md6">
+        <div class="layui-card note-panel">
+            <div class="layui-card-header panel-header">
+                <span><i class="fa fa-inbox" style="color:#667eea;margin-right:5px;"></i>收到的便签 <span id="unread-count-badge" style="display:none;background:#f5576c;color:#fff;font-size:11px;padding:1px 6px;border-radius:8px;margin-left:5px;">0</span></span>
+                <a href="javascript:;" onclick="openPushList()">查看全部 <i class="fa fa-angle-right"></i></a>
             </div>
-        </div>
-        <div class="layui-col-md6">
-            <div class="layui-card note-panel">
-                <div class="layui-card-header panel-header">
-                    <span><i class="fa fa-inbox" style="color:#667eea;margin-right:5px;"></i>收到的便签 <span id="unread-count-badge" style="display:none;background:#f5576c;color:#fff;font-size:11px;padding:1px 6px;border-radius:8px;margin-left:5px;">0</span></span>
-                    <a href="javascript:;" onclick="openPushList()">查看全部 <i class="fa fa-angle-right"></i></a>
-                </div>
-                <div class="layui-card-body" style="padding:0;max-height:300px;overflow-y:auto;" id="received-notes-list">
-                    <div class="empty-tip"><i class="fa fa-inbox" style="font-size:24px;"></i><br>暂无收到的便签</div>
-                </div>
+            <div class="layui-card-body" style="padding:0;max-height:300px;overflow-y:auto;" id="received-notes-list">
+                <div class="empty-tip"><i class="fa fa-inbox" style="font-size:24px;"></i><br>暂无收到的便签</div>
             </div>
-        </div>
-    </div>
-
-    {{-- 系统信息 --}}
-    <div class="layui-card" style="padding: 10px;">
-        <div class="layui-card-header">系统信息</div>
-        <div class="layui-card-body">
-            <table class="info-table">
-                <tr>
-                    <td class="label">系统名称</td>
-                    <td class="value">CmsPro 内容管理系统</td>
-                    <td class="label">系统版本</td>
-                    <td class="value">v{{ system_version() }} build {{ system_build() }}</td>
-                </tr>
-                <tr>
-                    <td class="label">UI组件库</td>
-                    <td class="value">Layui + Pear Admin</td>
-                    <td class="label">框架版本</td>
-                    <td class="value">Laravel {{ app()->version() }}</td>
-                    <td class="label">当前用户</td>
-                    <td class="value" id="info-user">{{ auth()->user()->username ?? '-' }}</td>
-                </tr>
-                <tr>
-                    <td class="label">用户角色</td>
-                    <td class="value" id="info-role">{{ auth()->user()->roles->first()->name ?? '未分配' }}</td>
-                    <td class="label">最后登录</td>
-                    <td class="value" id="info-last-login">{{ auth()->user()->last_login_at ?? '-' }}</td>
-                </tr>
-            </table>
         </div>
     </div>
 </div>
-<script src="{{ asset('CmsProUi/component/layui/layui.js') }}"></script>
-<script src="{{ asset('CmsProUi/component/pear/pear.js') }}"></script>
+
 <script>
     layui.use(['jquery', 'form'], function() {
         var $ = layui.jquery, form = layui.form;
-
-        $.ajaxSetup({
-            headers: {
-                'X-CSRF-TOKEN': '{{ csrf_token() }}'
-            },
-            statusCode: {
-                401: function() {
-                    layer.msg('登录已过期，请重新登录', {icon: 2, time: 1500}, function() {
-                        window.location.href = '/admin/login?redirect=' + encodeURIComponent(window.location.pathname + window.location.search);
-                    });
-                }
-            }
-        });
-
-        // 原仪表板统计数据
-        $.ajax({
-            url: '/api/admin/dashboard/stats',
-            type: 'GET',
-            dataType: 'json',
-            success: function(res) {
-                if (res.code === 0) {
-                    $('#stat-users').text(res.data.user_count || 0);
-                    $('#stat-roles').text(res.data.role_count || 0);
-                    $('#stat-menus').text(res.data.menu_count || 0);
-                    $('#stat-attachments').text(res.data.attachment_count || 0);
-                }
-            },
-            error: function() {
-                $('#stat-users').text('128');
-                $('#stat-roles').text('6');
-                $('#stat-menus').text('45');
-                $('#stat-attachments').text('320');
-            }
-        });
 
         // 便签摘要数据
         $.ajax({
@@ -597,5 +450,3 @@
         }
     });
 </script>
-</body>
-</html>

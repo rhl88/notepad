@@ -157,7 +157,7 @@ $comments = Note::find($noteId)->comments()->with('adminUser')->get();
 1. **数据隔离**：所有数据按 `admin_user_id` 隔离，查询/修改/删除均需带管理员 ID 条件或校验，杜绝越权。
 2. **级联清理**：删除便签（单删/批量）在事务内先删评论与推送记录，保证数据一致性。
 3. **配置读取**：`NoteService` 通过 `getConfig()` 读取 `app_cmspro_notepad_*` 配置项，未配置时回退 `Config/notepad.php` 默认值。
-4. **仪表盘覆盖**：本应用覆盖 `/admin/dashboard` 路由（name `admin.dashboard`），扩展应用需注意路由命名冲突。
+4. **仪表盘扩展集成**：本应用接管 `/admin/dashboard` 路由（name `admin.dashboard`），实现方式为「渲染框架原版 `admin.dashboard` 视图 + 插入应用面板片段」，**不整体替换框架页面**（保证框架后续新增的仪表盘特性自动保留）；扩展应用需注意路由命名冲突，如需同样扩展仪表盘，建议参考 `DashboardController::index()` 的锚点插入模式。
 5. **日期格式**：模型 `$casts` 统一输出 `Y-m-d H:i:s`。
 
 ---
@@ -167,3 +167,4 @@ $comments = Note::find($noteId)->comments()->with('adminUser')->get();
 | 版本 | 日期 | 更新人 | 变更内容 |
 |------|------|--------|----------|
 | 1.0.0 | 2026-08-13 | 开发团队 | 初始版本（对应应用 v1.0.1） |
+| 1.0.1 | 2026-09-15 | 开发团队 | 仪表盘由整体替换改为扩展集成：渲染框架原版 dashboard 并插入便签面板，框架新增特性（如官网动态）自动保留（对应应用 v1.0.3） |

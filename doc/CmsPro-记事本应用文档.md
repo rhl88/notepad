@@ -37,7 +37,7 @@
 | 便签列表 | `/admin/cmspro/notepad/notes` | 「我的便签」与「收到的便签」双视图，新建/编辑/删除/批量删除/状态切换，查看详情（含评论与推送记录）、评论、推送 |
 | 记事本设置 | `/admin/cmspro/notepad/settings` | 每页便签数、内容最大长度、推送人数上限 |
 
-此外，ServiceProvider 将 `/admin/dashboard` 路由**覆盖**为记事本仪表盘（name：`admin.dashboard`），仪表盘展示我的便签、收到的便签、未读推送数与便签统计摘要。
+此外，ServiceProvider 将 `/admin/dashboard` 路由**接管**（name：`admin.dashboard`）：页面加载框架原版仪表盘内容后，插入记事本便签面板（我的便签、收到的便签、未读推送数与便签统计摘要），不整体替换框架页面，框架后续新增的仪表盘特性自动保留。
 
 ### 2.2 功能特性
 
@@ -63,7 +63,7 @@
   ├─ 视图路由：/notes、/notes/create、/notes/{id}/edit、/settings
   ├─ API 路由：/api/notes（CRUD）、/api/notes/{id}/comments、/api/notes/{id}/push、
   │            /api/admin-users、/api/dashboard-summary、/api/settings
-  └─ 仪表盘覆盖：/admin/dashboard（admin.dashboard）
+  └─ 仪表盘扩展：/admin/dashboard（admin.dashboard）
                │
                ▼
         NoteService（业务逻辑层）
@@ -85,7 +85,7 @@
 - **级联清理**：删除便签（单删/批量）在事务内先删评论与推送记录，保证数据一致性
 - **配置驱动**：每页数量、内容长度、推送人数上限均从系统配置表读取（`app_cmspro_notepad_*`），未配置时回退 `Config/notepad.php` 默认值
 - **配置同步机制**：Install 脚本从 `manifest.json` 的 `config_groups` 同步配置到数据库（新增写默认值、已有仅更新结构保留用户值、已删除清理残留、空分组删除），卸载时全量清理
-- **仪表盘覆盖**：ServiceProvider 注册 `GET /admin/dashboard`（name `admin.dashboard`）覆盖系统原始仪表盘路由，卸载/停用应用后恢复系统默认
+- **仪表盘扩展集成**：ServiceProvider 注册 `GET /admin/dashboard`（name `admin.dashboard`）接管系统原始仪表盘路由，`DashboardController::index()` 渲染框架原版 `admin.dashboard` 视图，将应用便签面板片段插入（HTML 插到「系统信息」卡片之前、脚本插到 `</body>` 之前，锚点缺失时兜底追加到页面末尾），卸载/停用应用后恢复系统默认
 - **日期格式**：模型 `$casts` 统一输出 `Y-m-d H:i:s`
 
 ### 3.3 数据表结构
@@ -141,7 +141,7 @@
 | GET | `/admin/cmspro/notepad/notes/create` | NoteController::create | 新建便签页 |
 | GET | `/admin/cmspro/notepad/notes/{id}/edit` | NoteController::edit | 编辑便签页（数据前端 AJAX 回填） |
 | GET | `/admin/cmspro/notepad/settings` | SettingController::index | 设置页 |
-| GET | `/admin/dashboard` | DashboardController::index | 记事本仪表盘（覆盖系统原仪表盘，name `admin.dashboard`） |
+| GET | `/admin/dashboard` | DashboardController::index | 仪表盘扩展（框架原版内容 + 便签面板插入，name `admin.dashboard`） |
 
 ---
 
@@ -155,7 +155,7 @@
 ### 5.2 安装部署
 
 1. 通过应用市场安装本应用（Install 脚本自动执行迁移并将 manifest 配置同步到数据库）
-2. 安装后 `GET /admin/dashboard` 自动切换为记事本仪表盘（卸载/停用应用后恢复系统默认仪表盘）
+2. 安装后 `GET /admin/dashboard` 由本应用接管：在框架原版仪表盘基础上插入便签面板（卸载/停用应用后恢复系统默认仪表盘）
 3. 如需调整默认参数，进入「记事本设置」页修改（每页便签数、内容最大长度、推送人数上限）
 
 ### 5.3 日常操作流程
@@ -200,7 +200,7 @@ max_push_targets = 10
 ## 七、常见问题解答
 
 **Q1：为什么安装后后台仪表盘变了？**
-- 本应用会覆盖 `/admin/dashboard` 为记事本仪表盘（注册路由 name `admin.dashboard`），停用或卸载应用后恢复系统默认仪表盘
+- 本应用接管 `/admin/dashboard`（注册路由 name `admin.dashboard`）：页面仍加载框架原版仪表盘内容，再插入便签面板，框架后续新增的仪表盘特性（如官网动态）自动随框架升级获得；停用或卸载应用后恢复系统默认仪表盘
 
 **Q2：收到的便签打开后还显示未读？**
 - 查看便签详情时系统会自动将本人收到的推送标记为已读（`getNote` 中处理），请通过「便签详情」而不是列表预览查看

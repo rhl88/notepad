@@ -16,11 +16,45 @@ class DashboardController extends Controller
     }
 
     /**
-     * 扩展仪表板页面（覆盖原 /admin/dashboard）
+     * 扩展仪表板页面（接管 /admin/dashboard，但不整体替换）
+     *
+     * 渲染框架原版 dashboard（保留官网动态等框架特性，随框架升级自动获得新功能），
+     * 再将应用便签面板片段插入：HTML 插到"系统信息"卡片之前，脚本插到 </body> 之前
+     * （脚本须在 layui.js/pear.js 之后执行）。
      */
     public function index()
     {
-        return view('cmspro.notepad::Admin.dashboard');
+        $html = view('admin.dashboard')->render();
+        $widgets = view('cmspro.notepad::Admin.dashboard')->render();
+
+        // 以首个 <script 为界拆分片段：前半为样式与 HTML，后半为依赖 layui 的脚本
+        $scriptPos = strpos($widgets, '<script');
+        $widgetsHtml = $scriptPos === false ? $widgets : substr($widgets, 0, $scriptPos);
+        $widgetsScript = $scriptPos === false ? '' : substr($widgets, $scriptPos);
+
+        // HTML 锚点：定位"系统信息"卡片起点，把便签面板插到它之前（保持统计卡片→便签面板→系统信息的布局）
+        $inserted = false;
+        $marker = '<div class="layui-card-header">系统信息</div>';
+        $markerPos = strpos($html, $marker);
+        if ($markerPos !== false) {
+            $cardStart = strrpos(substr($html, 0, $markerPos), '<div class="layui-card"');
+            if ($cardStart !== false) {
+                $html = substr($html, 0, $cardStart) . $widgetsHtml . substr($html, $cardStart);
+                $inserted = true;
+            }
+        }
+
+        // 片段末尾落位：正常时仅脚本入尾部；锚点缺失时整体追加兜底，保证便签功能不丢失
+        $tail = $inserted ? $widgetsScript : $widgetsHtml . $widgetsScript;
+        if ($tail !== '') {
+            if (str_contains($html, '</body>')) {
+                $html = str_replace('</body>', $tail . '</body>', $html);
+            } else {
+                $html .= $tail;
+            }
+        }
+
+        return response($html);
     }
 
     /**

@@ -20,7 +20,7 @@
 
 1. 通过 CmsPro 后台「应用市场」安装记事本应用。
 2. 启用应用（`Install::install` 自动执行迁移并将 manifest 配置同步到数据库）。
-3. 安装后 `GET /admin/dashboard` 自动切换为记事本仪表盘（卸载/停用应用后恢复系统默认仪表盘）。
+3. 安装后 `GET /admin/dashboard` 由本应用接管：在**框架原版仪表盘**（欢迎区、官网动态、统计卡片、系统信息）基础上插入「我的便签 / 收到的便签」面板（卸载/停用应用后恢复系统默认仪表盘）。
 4. 如需调整默认参数，进入「记事本设置」页修改（每页便签数、内容最大长度、推送人数上限）。
 
 > 卸载应用会回滚业务数据表、清理 `app_cmspro_notepad_` 前缀配置。
@@ -37,7 +37,7 @@
 |------|------|--------|
 | 便签列表 | `/admin/cmspro/notepad/notes` | 「我的便签」与「收到的便签」双视图，新建/编辑/删除/批量删除/状态切换，查看详情（含评论与推送记录）、评论、推送 |
 | 记事本设置 | `/admin/cmspro/notepad/settings` | 每页便签数、内容最大长度、推送人数上限 |
-| 仪表盘 | `/admin/dashboard` | 我的便签、收到的便签、未读推送数与便签统计摘要 |
+| 仪表盘 | `/admin/dashboard` | 框架原版仪表盘内容 + 我的便签、收到的便签、未读推送数与便签统计摘要 |
 
 **验证步骤**：
 1. 新建一条便签（填写标题/内容，可选优先级、颜色、置顶）。
@@ -91,7 +91,7 @@ curl "http://www.cmspro.com/admin/cmspro/notepad/api/notes/unread-count"
 
 ```
 app/Apps/CmsproNotepad/
-├── ServiceProvider.php       # 服务提供者：路由/视图/配置 + 仪表盘覆盖
+├── ServiceProvider.php       # 服务提供者：路由/视图/配置 + 仪表盘接管扩展
 ├── Install.php               # 安装/卸载/升级：迁移 + manifest 配置三向同步
 ├── Config/notepad.php        # 应用默认配置
 ├── Routes/admin.php          # 后台页面 + API 路由
@@ -108,7 +108,7 @@ app/Apps/CmsproNotepad/
 
 ### Q1：为什么安装后后台仪表盘变了？
 
-本应用会覆盖 `/admin/dashboard` 为记事本仪表盘（注册路由 name `admin.dashboard`），停用或卸载应用后恢复系统默认仪表盘。
+本应用接管 `/admin/dashboard`（注册路由 name `admin.dashboard`）：页面仍加载框架原版仪表盘内容，再将「我的便签 / 收到的便签」面板插入其中，框架后续新增的仪表盘特性（如官网动态）自动随框架升级获得。停用或卸载应用后恢复系统默认仪表盘。
 
 ### Q2：收到的便签打开后还显示未读？
 
