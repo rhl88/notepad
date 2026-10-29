@@ -2,7 +2,7 @@
     "id": "cmspro.notepad",
     "name": "记事本",
     "description": "后台便签记录与协作应用，支持便签管理、留言评论、推送提醒，基于管理员账号体系实现权限控制",
-    "version": "1.1.1",
+    "version": "1.2.0",
     "author": "CmsPro",
     "icon": "fa fa-sticky-note",
     "require": {
@@ -95,7 +95,72 @@
             "title": "便签概览",
             "icon": "fa fa-sticky-note",
             "entry": "/api/admin/cmspro/notepad/widget/summary",
-            "refresh": 60
+            "refresh": 60,
+            "sizes": ["1x1", "2x1", "2x2"],
+            "default_size": "1x1",
+            "actions": [
+                {
+                    "id": "new-note",
+                    "title": "新增便签",
+                    "icon": "fa fa-plus",
+                    "method": "POST",
+                    "entry": "/api/admin/cmspro/notepad/widget/quick-note",
+                    "input": {
+                        "label": "便签内容",
+                        "placeholder": "随手记一条…",
+                        "maxlength": 500
+                    }
+                }
+            ]
+        },
+        {
+            "id": "sticky-note",
+            "title": "桌面便签",
+            "icon": "fa fa-sticky-note-o",
+            "entry": "/api/admin/cmspro/notepad/widget/note",
+            "refresh": 60,
+            "sizes": ["1x1", "2x1", "2x2"],
+            "default_size": "1x1",
+            "picker": {
+                "entry": "/api/admin/cmspro/notepad/widget/notes",
+                "param": "note_id",
+                "label": "选择便签"
+            },
+            "actions": [
+                {
+                    "id": "color",
+                    "title": "标记颜色",
+                    "icon": "fa fa-tint",
+                    "method": "POST",
+                    "entry": "/api/admin/cmspro/notepad/widget/note-color",
+                    "input": {
+                        "type": "select",
+                        "label": "便签颜色",
+                        "name": "color",
+                        "options": [
+                            { "value": "", "label": "默认" },
+                            { "value": "#ff5722", "label": "红色" },
+                            { "value": "#ff9800", "label": "橙色" },
+                            { "value": "#4caf50", "label": "绿色" },
+                            { "value": "#2196f3", "label": "蓝色" },
+                            { "value": "#9c27b0", "label": "紫色" }
+                        ]
+                    }
+                },
+                {
+                    "id": "content",
+                    "title": "编辑内容",
+                    "icon": "fa fa-pencil",
+                    "method": "POST",
+                    "entry": "/api/admin/cmspro/notepad/widget/note-content",
+                    "input": {
+                        "label": "便签内容",
+                        "name": "content",
+                        "placeholder": "修改便签内容…",
+                        "maxlength": 500
+                    }
+                }
+            ]
         }
     ],
     "runtime_files": []

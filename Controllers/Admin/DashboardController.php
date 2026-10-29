@@ -10,10 +10,25 @@ use App\Http\Controllers\Controller;
 use App\Http\Responses\ApiResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Throwable;
 
 class DashboardController extends Controller
 {
+    /** 桌面便签候选列表单次最多返回的便签数（与 WebOS 候选弹层上限一致） */
+    private const WIDGET_PICKER_LIMIT = 50;
+
+    /** 桌面便签标记颜色（十六进制值）=> 卡片配色 tone，与 WebOS WIDGET_TONE_WHITELIST 对齐；空串表示默认 */
+    private const WIDGET_NOTE_TONES = [
+        '' => 'default',
+        '#ff5722' => 'red',
+        '#ff9800' => 'orange',
+        '#4caf50' => 'green',
+        '#2196f3' => 'blue',
+        '#9c27b0' => 'purple',
+    ];
+
     /**
      * 扩展仪表板页面（接管 /admin/dashboard，但不整体替换）
      *
@@ -188,6 +203,171 @@ class DashboardController extends Controller
             ],
             'updated_at' => now()->format('Y-m-d H:i:s'),
         ]);
+    }
+
+    /**
+     * 桌面小工具操作：快捷新增便签（卡片内「新增便签」按钮）
+     *
+     * 只接收一条内容，标题自动取首行（超长截断），为空时用时间兜底；
+     * 归属当前登录管理员，创建口径复用 NoteService::createNote（含内容长度上限校验）。
+     */
+    public function quickNote(Request $request, NoteService $noteService)
+    {
+        $validated = $request->validate([
+            'content' => 'required|string|max:500',
+        ]);
+
+        $content = trim((string) $validated['content']);
+        if ($content === '') {
+            return response()->json(ApiResponse::error(400, '便签内容不能为空'));
+        }
+
+        $firstLine = Str::limit(trim(Str::before($content, "\n")), 30, '');
+        $title = $firstLine !== '' ? $firstLine : '快捷便签 ' . now()->format('Y-m-d H:i');
+
+        $result = $noteService->createNote([
+            'admin_user_id' => auth('admin')->id(),
+            'title' => $title,
+            'content' => $content,
+        ]);
+
+        if (($result['code'] ?? 0) !== 0) {
+            return response()->json($result);
+        }
+
+        return response()->json(ApiResponse::success([
+            'id' => $result['data']['id'] ?? 0,
+            'title' => $result['data']['title'] ?? $title,
+        ], '已新增便签'));
+    }
+
+    /**
+     * 桌面小工具候选列表：可作为桌面便签的便签（当前登录管理员自己的便签）
+     *
+     * WebOS 按 manifest.widgets[].picker 拉取本接口，返回 {items:[{value,label,hint}]}，
+     * 每个候选对应一张桌面卡片；按置顶、更新时间倒序，最多 WIDGET_PICKER_LIMIT 条。
+     */
+    public function widgetNotes()
+    {
+        $notes = Note::where('admin_user_id', auth('admin')->id())
+            ->orderByDesc('pinned')
+            ->orderByDesc('update_time')
+            ->limit(self::WIDGET_PICKER_LIMIT)
+            ->get(['id', 'title', 'status', 'update_time']);
+
+        $items = [];
+        foreach ($notes as $note) {
+            $title = trim((string) $note->title);
+
+            $items[] = [
+                'value' => (string) $note->id,
+                'label' => $title !== '' ? $title : '便签 #' . $note->id,
+                'hint' => ((int) $note->status === 1 ? '已完成' : '待办')
+                    . ' · ' . (string) $note->update_time,
+            ];
+        }
+
+        return response()->json(ApiResponse::success(['items' => $items]));
+    }
+
+    /**
+     * 桌面小工具数据：单条便签（桌面便签卡片）
+     *
+     * 桌面项实例参数 note_id 以查询串传入。契约在概览基础上扩展：
+     * title（便签标题）、text（正文，最多 2000 字）、color（卡片配色 tone）、
+     * status 取 running|stopped（已完成便签视为停止关注）。
+     * 非本人便签统一返回 404，避免泄露他人便签是否存在。
+     */
+    public function widgetNote(Request $request)
+    {
+        $validated = $request->validate([
+            'note_id' => 'required|integer|min:1',
+        ]);
+
+        $note = Note::find((int) $validated['note_id']);
+        if (! $note || (int) $note->admin_user_id !== (int) auth('admin')->id()) {
+            return response()->json(ApiResponse::error(404, '便签不存在'), 404);
+        }
+
+        $title = trim((string) $note->title);
+
+        return response()->json(ApiResponse::success([
+            'title' => $title !== '' ? $title : '便签 #' . $note->id,
+            'text' => mb_substr((string) $note->content, 0, 2000),
+            'color' => self::WIDGET_NOTE_TONES[(string) $note->color] ?? 'default',
+            'status' => (int) $note->status === 1 ? 'stopped' : 'running',
+            'updated_at' => (string) $note->update_time,
+        ]));
+    }
+
+    /**
+     * 桌面小工具操作：调整便签标记颜色
+     *
+     * 颜色取 manifest 声明的六个色值，空串表示默认；归属与权限校验复用 NoteService::updateNote
+     * （非本人便签返回 403，便签不存在返回 404）。
+     */
+    public function widgetNoteColor(Request $request, NoteService $noteService)
+    {
+        $validated = $request->validate([
+            'note_id' => 'required|integer|min:1',
+            'color' => ['nullable', 'string', Rule::in(array_keys(self::WIDGET_NOTE_TONES))],
+        ]);
+
+        // 空串经 ConvertEmptyStringsToNull 转成 null，这里统一归一为空串（默认色）
+        $color = (string) ($validated['color'] ?? '');
+
+        $result = $noteService->updateNote(
+            (int) $validated['note_id'],
+            ['color' => $color],
+            (int) auth('admin')->id()
+        );
+
+        if (($result['code'] ?? 0) !== 0) {
+            // 业务错误码与 HTTP 语义一致（400 内容超限 / 403 非本人 / 404 便签不存在）
+            $status = in_array((int) $result['code'], [400, 403, 404], true) ? (int) $result['code'] : 500;
+
+            return response()->json($result, $status);
+        }
+
+        return response()->json(ApiResponse::success([
+            'color' => self::WIDGET_NOTE_TONES[$color] ?? 'default',
+        ], '已更新标记颜色'));
+    }
+
+    /**
+     * 桌面小工具操作：编辑便签内容
+     *
+     * 内容上限与卡片输入框一致（500 字），应用侧配置的内容上限由 NoteService::updateNote 再校验一次；
+     * 返回 text 供卡片立即刷新正文。
+     */
+    public function widgetNoteContent(Request $request, NoteService $noteService)
+    {
+        $validated = $request->validate([
+            'note_id' => 'required|integer|min:1',
+            'content' => 'required|string|max:500',
+        ]);
+
+        $content = trim((string) $validated['content']);
+        if ($content === '') {
+            return response()->json(ApiResponse::error(400, '便签内容不能为空'));
+        }
+
+        $result = $noteService->updateNote(
+            (int) $validated['note_id'],
+            ['content' => $content],
+            (int) auth('admin')->id()
+        );
+
+        if (($result['code'] ?? 0) !== 0) {
+            // 业务错误码与 HTTP 语义一致（400 内容超限 / 403 非本人 / 404 便签不存在）
+            $status = in_array((int) $result['code'], [400, 403, 404], true) ? (int) $result['code'] : 500;
+
+            return response()->json($result, $status);
+        }
+
+        return response()->json(ApiResponse::success([
+            'text' => mb_substr($content, 0, 2000),
+        ], '已更新便签内容'));
     }
 
     /**
