@@ -52,6 +52,12 @@ class ServiceProvider extends BaseServiceProvider
             ->middleware(['web', 'auth:admin'])
             ->namespace('App\Apps\CmsproNotepad\Controllers\Admin')
             ->group(base_path('app/Apps/CmsproNotepad/Routes/admin.php'));
+
+        // 应用后台 API 路由（/api/admin/cmspro/notepad）：WebOS 桌面小工具等站内数据接口
+        Route::prefix('api/admin/cmspro/notepad')
+            ->middleware(['web', 'auth:admin'])
+            ->namespace('App\Apps\CmsproNotepad\Controllers\Admin')
+            ->group(base_path('app/Apps/CmsproNotepad/Routes/admin_api.php'));
     }
 
     protected function loadViews(): void

@@ -1,7 +1,7 @@
 # CmsPro-记事本-扩展指南
 
-> 版本：1.1.0 | 更新日期：2026-10-29
-> 应用版本：1.1.0 | 应用 ID：cmspro.notepad
+> 版本：1.1.1 | 更新日期：2026-10-29
+> 应用版本：1.1.1 | 应用 ID：cmspro.notepad
 
 ---
 
@@ -170,10 +170,37 @@ $comments = Note::find($noteId)->comments()->with('adminUser')->get();
 
 ---
 
-## 八、版本与更新日志
+## 八、WebOS 桌面小工具接入（1.1.1 新增）
+
+本应用在 `manifest.json` 的 `widgets` 中声明「便签概览」，供 WebOS 桌面右键「小工具」面板添加 1x1 数据卡片。卡片的渲染、轮询与状态点全部由 WebOS 负责，本应用只提供一个只读数据接口：
+
+```json
+{
+    "widgets": [
+        {
+            "id": "sticky-overview",
+            "title": "便签概览",
+            "icon": "fa fa-sticky-note",
+            "entry": "/api/admin/cmspro/notepad/widget/summary",
+            "refresh": 60
+        }
+    ]
+}
+```
+
+- **接口**：`GET /api/admin/cmspro/notepad/widget/summary`，中间件 `web` + `auth:admin` + `cmspro.notepad.permission:manage`。
+- **路由文件**：`Routes/admin_api.php`，由 `ServiceProvider::registerRoutes()` 以 `api/admin/cmspro/notepad` 前缀注册。与页面路由 `/admin/cmspro/notepad`（含其下 `/api` 子组）分离——WebOS 小工具的 `entry` 只接受站内 `/api/` 前缀，故单独一套 API 前缀。
+- **统计口径**（均按当前登录管理员）：便签总数与待办数合并为一次聚合查询（`COUNT(*)` + `SUM(status = 0)`）；今日新增按 `create_time >= 当天 00:00:00`；未读推送取 `app_cmspro_notepad_pushes` 中 `is_read = 0` 的记录数。
+- **返回契约**：`status` 有未读推送为 `warning`、否则 `running`；`value` / `unit` 为待办数（`条待办`）；`items` 依次为便签总数、未读推送、今日新增（WebOS 最多渲染 3 行）；`updated_at` 为 `Y-m-d H:i:s`。
+- **测试**：`Tests/Feature/WidgetSummaryTest.php` 覆盖未登录 401、契约字段与统计口径、无未读推送时 `running`、无 `manage` 权限 403（`code=40301`）。
+
+---
+
+## 九、版本与更新日志
 
 | 版本 | 日期 | 更新人 | 变更内容 |
 |------|------|--------|----------|
+| 1.1.1 | 2026-10-29 | 开发团队 | 新增 WebOS 桌面小工具「便签概览」：`manifest.json` 声明 `widgets`（`sticky-overview`、entry `/api/admin/cmspro/notepad/widget/summary`、refresh 60）；新增 `Routes/admin_api.php` 与 `ServiceProvider` 的 `api/admin/cmspro/notepad` 路由组；`DashboardController::widgetSummary()` 输出小工具数据契约；新增 `WidgetSummaryTest` 4 用例（对应应用 v1.1.1） |
 | 1.0.0 | 2026-08-13 | 开发团队 | 初始版本（对应应用 v1.0.1） |
 | 1.0.1 | 2026-09-15 | 开发团队 | 仪表盘由整体替换改为扩展集成：渲染框架原版 dashboard 并插入便签面板，框架新增特性（如官网动态）自动保留（对应应用 v1.0.3） |
 | 1.1.0 | 2026-10-29 | 开发团队 | 补充 `getMaxContentLength()` / `getMaxPushTargets()` 公开方法与配置缓存说明；注意事项新增「权限校验在中间件层，Service 层不校验功能权限」「推送幂等与唯一索引，禁止绕过 Service 直写 Push」；仪表盘集成补充异常降级说明（对应应用 v1.1.0） |

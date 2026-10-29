@@ -151,6 +151,46 @@ class DashboardController extends Controller
     }
 
     /**
+     * 桌面小工具数据：便签概览（当前登录管理员视角）
+     *
+     * WebOS 桌面小工具按 manifest.widgets[].refresh 秒轮询本接口，返回统一契约
+     * {title,status,value,unit,items,updated_at}；status 取 running|warning。
+     */
+    public function widgetSummary()
+    {
+        $adminUserId = auth('admin')->id();
+
+        // 便签总数与待办数合并为一次查询（与仪表板摘要同一口径）
+        $noteStat = Note::where('admin_user_id', $adminUserId)
+            ->selectRaw('COUNT(*) AS total_notes, COALESCE(SUM(status = 0), 0) AS pending_notes')
+            ->first();
+
+        $unreadCount = (int) Push::where('to_admin_user_id', $adminUserId)
+            ->where('is_read', 0)
+            ->count();
+
+        $todayNotes = Note::where('admin_user_id', $adminUserId)
+            ->where('create_time', '>=', now()->startOfDay())
+            ->count();
+
+        $pendingNotes = (int) ($noteStat->pending_notes ?? 0);
+
+        return ApiResponse::success([
+            'title' => '便签概览',
+            // 有未读推送即需要关注，其余视为正常运行
+            'status' => $unreadCount > 0 ? 'warning' : 'running',
+            'value' => $pendingNotes,
+            'unit' => '条待办',
+            'items' => [
+                ['label' => '便签总数', 'value' => (string) (int) ($noteStat->total_notes ?? 0)],
+                ['label' => '未读推送', 'value' => (string) $unreadCount],
+                ['label' => '今日新增', 'value' => (string) $todayNotes],
+            ],
+            'updated_at' => now()->format('Y-m-d H:i:s'),
+        ]);
+    }
+
+    /**
      * 将推送记录集合格式化为面板所需的扁平结构
      *
      * @param \Illuminate\Support\Collection<int, Push> $pushes
