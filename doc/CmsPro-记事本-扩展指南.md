@@ -1,7 +1,7 @@
 # CmsPro-记事本-扩展指南
 
-> 版本：1.0.0 | 更新日期：2026-08-13
-> 应用版本：1.0.1 | 应用 ID：cmspro.notepad
+> 版本：1.1.0 | 更新日期：2026-10-29
+> 应用版本：1.1.0 | 应用 ID：cmspro.notepad
 
 ---
 
@@ -52,6 +52,12 @@ use App\Apps\CmsproNotepad\Services\NoteService;
 | `pushNote(int $noteId, int $fromUserId, array $targetUserIds, string $message = ''): array` | 推送便签给指定管理员 |
 | `getUnreadCount(int $adminUserId): int` | 获取未读推送数量 |
 | `getAdminUsers(int $excludeUserId): array` | 获取管理员列表（用于推送选择） |
+| `getMaxContentLength(): int` | 读取「内容最大长度」配置，未配置时回退 `Config/notepad.php` 默认值 |
+| `getMaxPushTargets(): int` | 读取「推送人数上限」配置，未配置时回退默认值 |
+
+> `getConfig(string $key, $default = null)` 为 `protected`，扩展应用请通过上面两个公开方法取值，不要直接查配置表。
+>
+> 三项配置（`per_page`、`max_content_length`、`max_push_targets`）在一次请求内合并为一次查询，结果按 `NoteService::CONFIG_CACHE_KEY`（`cmspro.notepad:configs`）缓存 10 分钟；若扩展代码直接改写了配置表，需 `Cache::forget(NoteService::CONFIG_CACHE_KEY)` 才能立即生效。
 
 #### 调用示例
 
@@ -155,10 +161,12 @@ $comments = Note::find($noteId)->comments()->with('adminUser')->get();
 ## 七、注意事项
 
 1. **数据隔离**：所有数据按 `admin_user_id` 隔离，查询/修改/删除均需带管理员 ID 条件或校验，杜绝越权。
-2. **级联清理**：删除便签（单删/批量）在事务内先删评论与推送记录，保证数据一致性。
-3. **配置读取**：`NoteService` 通过 `getConfig()` 读取 `app_cmspro_notepad_*` 配置项，未配置时回退 `Config/notepad.php` 默认值。
-4. **仪表盘扩展集成**：本应用接管 `/admin/dashboard` 路由（name `admin.dashboard`），实现方式为「渲染框架原版 `admin.dashboard` 视图 + 插入应用面板片段」，**不整体替换框架页面**（保证框架后续新增的仪表盘特性自动保留）；扩展应用需注意路由命名冲突，如需同样扩展仪表盘，建议参考 `DashboardController::index()` 的锚点插入模式。
-5. **日期格式**：模型 `$casts` 统一输出 `Y-m-d H:i:s`。
+2. **权限校验在中间件层**：记事本自身的路由由应用级中间件 `cmspro.notepad.permission:{suffix}` 逐条校验（详见应用文档 2.3）。**Service 层只校验数据归属，不校验功能权限**——扩展应用直接调用 `NoteService` 时，中间件不会生效，需要自行确认当前管理员是否具备对应权限，可复用 `CheckNotepadPermission::allows('push')` 等静态方法判断。
+3. **级联清理**：删除便签（单删/批量）在事务内先删评论与推送记录，保证数据一致性。
+4. **推送幂等**：`pushNote` 全程事务包裹；`app_cmspro_notepad_pushes` 建有 `(note_id, to_admin_user_id)` 唯一索引，重复推送会被数据库拒绝，Service 内部捕获唯一键冲突后按「跳过」处理。扩展代码请勿绕过 Service 直接 `Push::create()`，否则会抛出未捕获的唯一键异常。
+5. **配置读取**：`NoteService` 通过 `getConfig()` 读取 `app_cmspro_notepad_*` 配置项，未配置时回退 `Config/notepad.php` 默认值，结果缓存 10 分钟（见 3.1）。
+6. **仪表盘扩展集成**：本应用接管 `/admin/dashboard` 路由（name `admin.dashboard`），实现方式为「渲染框架原版 `admin.dashboard` 视图 + 插入应用面板片段」，**不整体替换框架页面**（保证框架后续新增的仪表盘特性自动保留）；面板渲染与合并整体包在 `try/catch (Throwable)` 中，异常时降级返回框架原版仪表盘。扩展应用需注意路由命名冲突，如需同样扩展仪表盘，建议参考 `DashboardController::index()` 的锚点插入 + 异常降级模式。
+7. **日期格式**：模型 `$casts` 统一输出 `Y-m-d H:i:s`。
 
 ---
 
@@ -168,3 +176,4 @@ $comments = Note::find($noteId)->comments()->with('adminUser')->get();
 |------|------|--------|----------|
 | 1.0.0 | 2026-08-13 | 开发团队 | 初始版本（对应应用 v1.0.1） |
 | 1.0.1 | 2026-09-15 | 开发团队 | 仪表盘由整体替换改为扩展集成：渲染框架原版 dashboard 并插入便签面板，框架新增特性（如官网动态）自动保留（对应应用 v1.0.3） |
+| 1.1.0 | 2026-10-29 | 开发团队 | 补充 `getMaxContentLength()` / `getMaxPushTargets()` 公开方法与配置缓存说明；注意事项新增「权限校验在中间件层，Service 层不校验功能权限」「推送幂等与唯一索引，禁止绕过 Service 直写 Push」；仪表盘集成补充异常降级说明（对应应用 v1.1.0） |

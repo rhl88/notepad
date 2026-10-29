@@ -2,7 +2,7 @@
     "id": "cmspro.notepad",
     "name": "记事本",
     "description": "后台便签记录与协作应用，支持便签管理、留言评论、推送提醒，基于管理员账号体系实现权限控制",
-    "version": "1.0.3",
+    "version": "1.1.0",
     "author": "CmsPro",
     "icon": "fa fa-sticky-note",
     "require": {

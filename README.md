@@ -1,6 +1,6 @@
 # 记事本 应用文档
 
-> 应用ID：`cmspro.notepad` | 文档版本：1.0.2 | 应用版本：1.0.3 | 依赖：PHP ≥ 8.3, CmsPro ≥ 5.0.0
+> 应用ID：`cmspro.notepad` | 文档版本：1.1.0 | 应用版本：1.1.0 | 依赖：PHP ≥ 8.3, CmsPro ≥ 5.0.0
 
 - 官方地址：https://www.cmspro.cn/apps/cmspro.notepad
 - 本应用是 CmsPro v5 后台便签记录与协作应用，基于 CMSPRO 运行，请先安装 [CMSPRO](https://www.cmspro.cn/help/2)
@@ -12,26 +12,29 @@
 - **便签管理**：创建个人便签，支持标题/内容/优先级（普通/重要/紧急）/颜色标记/置顶/完成状态，按管理员隔离，仅本人可改可删
 - **推送协作**：便签拥有者可将便签推送给其他管理员（可附留言），每人每条仅一条推送记录、重复推送自动跳过
 - **评论互动**：便签拥有者与被推送者均可评论，评论人信息随评论返回
-- **提醒与仪表盘**：未读推送数提示；安装后 `/admin/dashboard` 由应用接管——框架原版仪表盘内容 + 插入便签面板（我的便签/收到的便签/未读推送/统计摘要）
-- **配置驱动**：每页便签数、内容最大长度、推送人数上限均从系统配置读取
+- **提醒与仪表盘**：未读推送数提示；安装后 `/admin/dashboard` 由应用接管——框架原版仪表盘内容 + 插入便签面板（我的便签/收到的便签/未读推送/统计摘要），面板渲染异常时自动降级为框架原版仪表盘
+- **权限控制**：5 项权限（manage/create/edit/delete/push）通过应用级中间件 `cmspro.notepad.permission:{suffix}` 逐路由校验，未授权页面返回应用自有 403 页、接口返回 HTTP 403；安装/升级时自动为存量启用角色补授权限
+- **配置驱动**：每页便签数、内容最大长度、推送人数上限均从系统配置读取（缓存 10 分钟）
 
 ## 2. 目录结构
 
 ```
 CmsproNotepad/
 ├── Config/notepad.php                 # 默认配置值
-├── Routes/admin.php                   # 后台页面与 API 路由
+├── Routes/admin.php                   # 后台页面与 API 路由（逐路由挂权限中间件）
 ├── Controllers/Admin/                 # 后台控制器（便签/仪表盘/设置）
+├── Middleware/CheckNotepadPermission.php # 应用级权限校验中间件
 ├── Models/
 │   ├── Note.php                       # 便签模型
 │   ├── NoteComment.php                # 评论模型
 │   └── Push.php                       # 推送模型
 ├── Services/NoteService.php           # 便签业务逻辑
 ├── Migrations/                        # 应用表迁移（app_cmspro_notepad_ 前缀）
-├── Views/Admin/                       # 后台视图（列表/表单/设置/仪表盘）
-├── Tests/Feature/                     # 应用级功能测试
+├── sql/                               # 升级 SQL 脚本与回滚脚本（migrations/ + rollback/）
+├── Views/Admin/                       # 后台视图（列表/表单/设置/仪表盘 + _js_base 等共享片段）
+├── Tests/                             # 应用级功能测试（NotepadTestCase + Feature/）
 ├── Install.php                        # 安装/卸载/升级逻辑
-├── ServiceProvider.php                # 路由、视图注册与仪表盘接管扩展
+├── ServiceProvider.php                # 路由、视图、中间件别名注册与仪表盘接管扩展
 ├── manifest.json                      # 应用元数据唯一声明源
 └── doc/                               # 应用文档
 ```

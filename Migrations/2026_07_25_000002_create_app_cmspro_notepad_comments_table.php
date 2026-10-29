@@ -25,7 +25,10 @@ return new class extends Migration
             $table->index('admin_user_id');
         });
 
-        DB::statement("ALTER TABLE `app_cmspro_notepad_comments` COMMENT '记事本评论表'");
+        // COMMENT 为 MySQL 方言，仅 MySQL 驱动执行，保证 SQLite 等测试环境可迁移
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE `app_cmspro_notepad_comments` COMMENT '记事本评论表'");
+        }
     }
 
     public function down(): void

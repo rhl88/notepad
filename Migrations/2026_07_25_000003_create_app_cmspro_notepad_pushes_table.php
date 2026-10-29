@@ -23,12 +23,17 @@ return new class extends Migration
             $table->timestamp('create_time')->nullable()->comment('创建时间');
             $table->timestamp('update_time')->nullable()->comment('更新时间');
 
-            $table->index('note_id');
-            $table->index('to_admin_user_id');
-            $table->index('is_read');
+            // 同一条便签对同一管理员只允许一条推送记录，从库层面杜绝并发重复推送；
+            // 该唯一索引的最左前缀即 note_id，可覆盖「查某便签的全部推送」查询
+            $table->unique(['note_id', 'to_admin_user_id']);
+            // 「我收到的未读推送」为最高频查询，复合索引最左前缀同时覆盖 to_admin_user_id 单列过滤
+            $table->index(['to_admin_user_id', 'is_read']);
         });
 
-        DB::statement("ALTER TABLE `app_cmspro_notepad_pushes` COMMENT '记事本推送记录表'");
+        // COMMENT 为 MySQL 方言，仅 MySQL 驱动执行，保证 SQLite 等测试环境可迁移
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE `app_cmspro_notepad_pushes` COMMENT '记事本推送记录表'");
+        }
     }
 
     public function down(): void

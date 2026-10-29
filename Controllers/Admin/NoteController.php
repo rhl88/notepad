@@ -4,10 +4,25 @@ namespace App\Apps\CmsproNotepad\Controllers\Admin;
 
 use App\Apps\CmsproNotepad\Services\NoteService;
 use App\Http\Controllers\Controller;
+use App\Http\Responses\ApiResponse;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class NoteController extends Controller
 {
+    /** 便签标记颜色白名单，与 Views/Admin/notes/form.blade.php 颜色选择器保持一致 */
+    private const COLOR_WHITELIST = ['', '#ff5722', '#ff9800', '#4caf50', '#2196f3', '#9c27b0'];
+
+    /** 评论内容长度上限 */
+    private const COMMENT_MAX_LENGTH = 1000;
+
+    /** 单次批量删除数量上限 */
+    private const BATCH_DELETE_MAX = 100;
+
+    /** 列表内容摘要截取长度 */
+    private const EXCERPT_LENGTH = 100;
+
     protected NoteService $noteService;
 
     public function __construct(NoteService $noteService)
@@ -20,7 +35,10 @@ class NoteController extends Controller
      */
     public function index()
     {
-        return view('cmspro.notepad::Admin.notes.index');
+        // 推送人数上限下发到页面，供推送弹窗展示「已选 / 上限」计数
+        return view('cmspro.notepad::Admin.notes.index', [
+            'maxPushTargets' => $this->noteService->getMaxPushTargets(),
+        ]);
     }
 
     /**
@@ -28,7 +46,7 @@ class NoteController extends Controller
      */
     public function create()
     {
-        return view('cmspro.notepad::Admin.notes.form');
+        return view('cmspro.notepad::Admin.notes.form', $this->formViewData());
     }
 
     /**
@@ -36,7 +54,20 @@ class NoteController extends Controller
      */
     public function edit($id)
     {
-        return view('cmspro.notepad::Admin.notes.form');
+        return view('cmspro.notepad::Admin.notes.form', $this->formViewData());
+    }
+
+    /**
+     * 表单页视图数据
+     *
+     * 内容字数上限来自应用配置项 max_content_length，由后端下发而非前端另调设置接口
+     * （/api/settings 挂 manage 权限，仅有 create 权限的用户调用会被拒）。
+     *
+     * @return array<string, int>
+     */
+    private function formViewData(): array
+    {
+        return ['maxContentLength' => $this->noteService->getMaxContentLength()];
     }
 
     /**
@@ -44,68 +75,39 @@ class NoteController extends Controller
      */
     public function list(Request $request)
     {
-        $params = [
+        $tab = $request->input('tab') === 'received' ? 'received' : 'mine';
+
+        $params = array_filter([
             'admin_user_id' => auth('admin')->id(),
-            'tab' => $request->input('tab', 'mine'),
+            'tab' => $tab,
             'status' => $request->input('status'),
             'priority' => $request->input('priority'),
             'keyword' => $request->input('keyword'),
             'is_read' => $request->input('is_read'),
-            'per_page' => $request->input('limit', 20),
-        ];
+            // 不塞默认值：前端未传 limit 时由 Service 回落到应用配置项 per_page
+            'per_page' => $request->input('limit'),
+        ], fn ($value) => $value !== null && $value !== '');
 
-        $result = $this->noteService->getNotes(array_filter($params, fn($v) => $v !== null && $v !== ''));
+        $result = $this->noteService->getNotes($params);
 
         if ($result['code'] !== 0) {
-            return response()->json(['code' => 1, 'msg' => $result['message'] ?? '获取失败', 'data' => null]);
+            return response()->json([
+                'code' => 1,
+                'msg' => $result['message'] ?? '获取失败',
+                'count' => 0,
+                'data' => [],
+            ]);
         }
 
         $items = $result['data']['items'] ?? [];
-        $total = $result['data']['pagination']['total'] ?? 0;
-
-        $tab = $params['tab'];
-
-        if ($tab === 'received') {
-            // 收到的便签数据展平（create_time 已在 Service 中格式化）
-            $data = array_map(function ($item) {
-                $note = $item['note'] ?? [];
-                // note 是 Eloquent 模型，需先转数组获取格式化后的时间
-                $noteArr = $note instanceof \Illuminate\Database\Eloquent\Model ? $note->toArray() : (array) $note;
-                return [
-                    'id' => $item['id'],
-                    'note_id' => $item['note_id'],
-                    'title' => $noteArr['title'] ?? '',
-                    'content' => isset($noteArr['content']) ? mb_substr($noteArr['content'], 0, 100) : '',
-                    'priority' => $noteArr['priority'] ?? 0,
-                    'status' => $noteArr['status'] ?? 0,
-                    'from_user' => $item['from_user'] ? ($item['from_user']['name'] ?: $item['from_user']['username']) : '未知',
-                    'message' => $item['message'] ?? '',
-                    'is_read' => $item['is_read'],
-                    'create_time' => $item['create_time'],
-                ];
-            }, $items);
-        } else {
-            // 我的便签数据展平（Eloquent 模型先转数组确保日期格式化）
-            $data = array_map(function ($item) {
-                $arr = $item instanceof \Illuminate\Database\Eloquent\Model ? $item->toArray() : (array) $item;
-                return [
-                    'id' => $arr['id'],
-                    'title' => $arr['title'],
-                    'content' => mb_substr($arr['content'] ?? '', 0, 100),
-                    'status' => $arr['status'],
-                    'priority' => $arr['priority'],
-                    'color' => $arr['color'] ?? '',
-                    'pinned' => $arr['pinned'],
-                    'create_time' => $arr['create_time'],
-                    'update_time' => $arr['update_time'],
-                ];
-            }, $items);
-        }
+        $data = $tab === 'received'
+            ? array_map([$this, 'formatReceivedRow'], $items)
+            : array_map([$this, 'formatMineRow'], $items);
 
         return response()->json([
             'code' => 0,
             'msg' => '',
-            'count' => $total,
+            'count' => $result['data']['pagination']['total'] ?? 0,
             'data' => $data,
         ]);
     }
@@ -124,18 +126,21 @@ class NoteController extends Controller
      */
     public function store(Request $request)
     {
-        $request->validate([
+        $validated = $request->validate([
             'title' => 'required|string|max:200',
             'content' => 'nullable|string',
+            'priority' => 'nullable|integer|in:0,1,2',
+            'color' => ['nullable', 'string', 'max:20', Rule::in(self::COLOR_WHITELIST)],
+            'pinned' => 'nullable|integer|in:0,1',
         ]);
 
         $result = $this->noteService->createNote([
             'admin_user_id' => auth('admin')->id(),
-            'title' => $request->input('title'),
-            'content' => $request->input('content', ''),
-            'priority' => $request->input('priority', 0),
-            'color' => $request->input('color', ''),
-            'pinned' => $request->input('pinned', 0),
+            'title' => $validated['title'],
+            'content' => $validated['content'] ?? '',
+            'priority' => (int) ($validated['priority'] ?? 0),
+            'color' => $validated['color'] ?? '',
+            'pinned' => (int) ($validated['pinned'] ?? 0),
         ]);
 
         return response()->json($result);
@@ -146,7 +151,16 @@ class NoteController extends Controller
      */
     public function update(Request $request, $id)
     {
-        $result = $this->noteService->updateNote((int) $id, $request->all(), auth('admin')->id());
+        $validated = $request->validate([
+            'title' => 'sometimes|required|string|max:200',
+            'content' => 'sometimes|nullable|string',
+            'priority' => 'sometimes|nullable|integer|in:0,1,2',
+            'color' => ['sometimes', 'nullable', 'string', 'max:20', Rule::in(self::COLOR_WHITELIST)],
+            'pinned' => 'sometimes|nullable|integer|in:0,1',
+        ]);
+
+        $result = $this->noteService->updateNote((int) $id, $validated, auth('admin')->id());
+
         return response()->json($result);
     }
 
@@ -173,8 +187,13 @@ class NoteController extends Controller
      */
     public function batchDelete(Request $request)
     {
-        $ids = $request->input('ids', []);
-        $result = $this->noteService->batchDelete($ids, auth('admin')->id());
+        $validated = $request->validate([
+            'ids' => 'required|array|min:1|max:' . self::BATCH_DELETE_MAX,
+            'ids.*' => 'integer',
+        ]);
+
+        $result = $this->noteService->batchDelete($validated['ids'], auth('admin')->id());
+
         return response()->json($result);
     }
 
@@ -183,14 +202,14 @@ class NoteController extends Controller
      */
     public function addComment(Request $request, $noteId)
     {
-        $request->validate([
-            'content' => 'required|string',
+        $validated = $request->validate([
+            'content' => 'required|string|max:' . self::COMMENT_MAX_LENGTH,
         ]);
 
         $result = $this->noteService->addComment(
             (int) $noteId,
             auth('admin')->id(),
-            $request->input('content')
+            $validated['content']
         );
 
         return response()->json($result);
@@ -201,8 +220,8 @@ class NoteController extends Controller
      */
     public function push(Request $request, $noteId)
     {
-        $request->validate([
-            'target_user_ids' => 'required|array',
+        $validated = $request->validate([
+            'target_user_ids' => 'required|array|min:1',
             'target_user_ids.*' => 'integer',
             'message' => 'nullable|string|max:500',
         ]);
@@ -210,8 +229,8 @@ class NoteController extends Controller
         $result = $this->noteService->pushNote(
             (int) $noteId,
             auth('admin')->id(),
-            $request->input('target_user_ids'),
-            $request->input('message') ?? ''
+            $validated['target_user_ids'],
+            $validated['message'] ?? ''
         );
 
         return response()->json($result);
@@ -223,7 +242,8 @@ class NoteController extends Controller
     public function unreadCount()
     {
         $count = $this->noteService->getUnreadCount(auth('admin')->id());
-        return response()->json(['code' => 0, 'data' => ['count' => $count]]);
+
+        return response()->json(ApiResponse::success(['count' => $count]));
     }
 
     /**
@@ -233,5 +253,69 @@ class NoteController extends Controller
     {
         $result = $this->noteService->getAdminUsers(auth('admin')->id());
         return response()->json($result);
+    }
+
+    /**
+     * 展平「我的便签」行数据（模型先转数组以复用 $casts 的日期格式）
+     *
+     * @param Model|array<string, mixed> $item
+     * @return array<string, mixed>
+     */
+    private function formatMineRow($item): array
+    {
+        $row = $item instanceof Model ? $item->toArray() : (array) $item;
+
+        return [
+            'id' => $row['id'] ?? 0,
+            'title' => $row['title'] ?? '',
+            'content' => $this->excerpt($row['content'] ?? ''),
+            'status' => $row['status'] ?? 0,
+            'priority' => $row['priority'] ?? 0,
+            'color' => $row['color'] ?? '',
+            'pinned' => $row['pinned'] ?? 0,
+            'create_time' => $row['create_time'] ?? null,
+            'update_time' => $row['update_time'] ?? null,
+        ];
+    }
+
+    /**
+     * 展平「收到的便签」行数据
+     *
+     * @param array<string, mixed> $item
+     * @return array<string, mixed>
+     */
+    private function formatReceivedRow($item): array
+    {
+        $item = (array) $item;
+        $note = $item['note'] ?? [];
+        $noteRow = $note instanceof Model ? $note->toArray() : (array) $note;
+        $fromUser = $item['from_user'] ?? null;
+
+        return [
+            'id' => $item['id'] ?? 0,
+            'note_id' => $item['note_id'] ?? 0,
+            'title' => $noteRow['title'] ?? '',
+            'content' => $this->excerpt($noteRow['content'] ?? ''),
+            'priority' => $noteRow['priority'] ?? 0,
+            'status' => $noteRow['status'] ?? 0,
+            'from_user' => $fromUser ? ($fromUser['name'] ?: $fromUser['username']) : '未知',
+            'message' => $item['message'] ?? '',
+            'is_read' => $item['is_read'] ?? 0,
+            'create_time' => $item['create_time'] ?? null,
+        ];
+    }
+
+    /**
+     * 截取内容摘要，超长时补省略号，避免前端看到被硬切断的半句话
+     */
+    private function excerpt($content): string
+    {
+        $content = (string) $content;
+
+        if (mb_strlen($content) <= self::EXCERPT_LENGTH) {
+            return $content;
+        }
+
+        return mb_substr($content, 0, self::EXCERPT_LENGTH) . '...';
     }
 }

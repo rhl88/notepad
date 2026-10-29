@@ -7,24 +7,67 @@ use App\Apps\CmsproNotepad\Models\NoteComment;
 use App\Apps\CmsproNotepad\Models\Push;
 use App\Http\Responses\ApiResponse;
 use App\Models\ConfigItem;
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 class NoteService
 {
     /**
+     * 应用配置缓存键
+     *
+     * 本应用全部配置项整体缓存为一个键，设置页保存后由 SettingController 主动清除，
+     * 避免每条配置各占一个键导致失效逻辑分散。
+     */
+    public const CONFIG_CACHE_KEY = 'cmspro.notepad:configs';
+
+    /** 应用配置缓存时长（秒） */
+    private const CONFIG_CACHE_TTL = 600;
+
+    /** 本应用读取的配置项 code 后缀，与 manifest.json 中 config_groups 声明保持一致 */
+    private const CONFIG_KEYS = ['per_page', 'max_content_length', 'max_push_targets'];
+
+    /** per_page 配置缺失或非法时的兜底值 */
+    private const DEFAULT_PER_PAGE = 20;
+
+    /** 每页条数硬上限，与 SettingController 中 per_page 的可写范围一致 */
+    private const MAX_PER_PAGE = 100;
+
+    /** max_content_length 配置缺失时的兜底值，与 Config/notepad.php 默认值一致 */
+    private const DEFAULT_MAX_CONTENT_LENGTH = 5000;
+
+    /** max_push_targets 配置缺失时的兜底值，与 Config/notepad.php 默认值一致 */
+    private const DEFAULT_MAX_PUSH_TARGETS = 10;
+
+    /**
      * 获取便签列表（我的便签 / 收到的便签）
      */
     public function getNotes(array $params): array
     {
-        $adminUserId = $params['admin_user_id'];
-        $tab = $params['tab'] ?? 'mine'; // mine=我的便签, received=收到的便签
-        $perPage = $params['per_page'] ?? $this->getConfig('per_page', 20);
+        $adminUserId = (int) ($params['admin_user_id'] ?? 0);
+        $tab = ($params['tab'] ?? 'mine') === 'received' ? 'received' : 'mine';
+        $perPage = $this->resolvePerPage($params['per_page'] ?? null);
 
         if ($tab === 'received') {
             return $this->getReceivedNotes($adminUserId, $params, $perPage);
         }
 
         return $this->getMyNotes($adminUserId, $params, $perPage);
+    }
+
+    /**
+     * 解析每页条数
+     *
+     * 优先取请求参数（Layui table 的 limit），未传时回落到应用配置项 per_page，
+     * 最终结果限制在 1 ~ MAX_PER_PAGE 之间，防止越界参数一次拉取过多记录。
+     */
+    private function resolvePerPage($perPage): int
+    {
+        if (!is_numeric($perPage) || (int) $perPage < 1) {
+            $perPage = $this->getConfig('per_page', self::DEFAULT_PER_PAGE);
+        }
+
+        return min(max((int) $perPage, 1), self::MAX_PER_PAGE);
     }
 
     /**
@@ -89,7 +132,8 @@ class NoteService
                 ] : null,
                 'message' => $push->message,
                 'is_read' => $push->is_read,
-                'create_time' => $push->create_time ? $push->create_time->format('Y-m-d H:i:s') : null,
+                // 模型层已通过 $casts + serializeDate 统一为 Y-m-d H:i:s，此处不再二次 format
+                'create_time' => $push->create_time ? (string) $push->create_time : null,
             ];
         }
 
@@ -139,7 +183,7 @@ class NoteService
      */
     public function createNote(array $data): array
     {
-        $maxContentLength = $this->getConfig('max_content_length', 5000);
+        $maxContentLength = $this->getMaxContentLength();
 
         if (mb_strlen($data['content'] ?? '') > $maxContentLength) {
             return ApiResponse::error(400, "内容不能超过{$maxContentLength}个字符");
@@ -187,7 +231,7 @@ class NoteService
         }
 
         if (isset($updateData['content'])) {
-            $maxContentLength = $this->getConfig('max_content_length', 5000);
+            $maxContentLength = $this->getMaxContentLength();
             if (mb_strlen($updateData['content']) > $maxContentLength) {
                 return ApiResponse::error(400, "内容不能超过{$maxContentLength}个字符");
             }
@@ -249,6 +293,9 @@ class NoteService
 
     /**
      * 批量删除便签
+     *
+     * 先筛出属于当前管理员的便签 ID（越权 ID 静默忽略），再以三条批量语句完成删除，
+     * 避免按记录逐条删除产生 3N 次数据库往返。
      */
     public function batchDelete(array $ids, int $adminUserId): array
     {
@@ -256,19 +303,22 @@ class NoteService
             return ApiResponse::error(400, '请选择要删除的便签');
         }
 
-        $notes = Note::whereIn('id', $ids)
+        $ownedIds = Note::whereIn('id', $ids)
             ->where('admin_user_id', $adminUserId)
-            ->get();
+            ->pluck('id')
+            ->all();
 
-        DB::transaction(function () use ($notes) {
-            foreach ($notes as $note) {
-                NoteComment::where('note_id', $note->id)->delete();
-                Push::where('note_id', $note->id)->delete();
-                $note->delete();
-            }
+        if ($ownedIds === []) {
+            return ApiResponse::error(400, '请选择要删除的便签');
+        }
+
+        DB::transaction(function () use ($ownedIds) {
+            NoteComment::whereIn('note_id', $ownedIds)->delete();
+            Push::whereIn('note_id', $ownedIds)->delete();
+            Note::whereIn('id', $ownedIds)->delete();
         });
 
-        return ApiResponse::success(null, "成功删除{$notes->count()}条便签");
+        return ApiResponse::success(null, '成功删除' . count($ownedIds) . '条便签');
     }
 
     /**
@@ -320,34 +370,74 @@ class NoteService
             return ApiResponse::error(403, '只能推送自己的便签');
         }
 
-        $maxTargets = $this->getConfig('max_push_targets', 10);
+        // 目标去重并统一为整型，避免同一人重复计数、字符串 ID 导致 in_array 判断失效
+        $targetUserIds = array_values(array_unique(array_map('intval', $targetUserIds)));
+
+        $maxTargets = $this->getMaxPushTargets();
         if (count($targetUserIds) > $maxTargets) {
             return ApiResponse::error(400, "推送人数不能超过{$maxTargets}人");
         }
 
-        if (in_array($fromUserId, $targetUserIds)) {
+        if (in_array($fromUserId, $targetUserIds, true)) {
             return ApiResponse::error(400, '不能推送给自己');
         }
 
-        $created = 0;
-        foreach ($targetUserIds as $toUserId) {
-            // 避免重复推送
-            $exists = Push::where('note_id', $noteId)
-                ->where('to_admin_user_id', $toUserId)
-                ->exists();
-
-            if (!$exists) {
-                Push::create([
-                    'note_id' => $noteId,
-                    'from_admin_user_id' => $fromUserId,
-                    'to_admin_user_id' => $toUserId,
-                    'message' => $message,
-                ]);
-                $created++;
-            }
+        if ($targetUserIds === []) {
+            return ApiResponse::error(400, '请选择推送对象');
         }
 
+        $created = $this->createPushes($noteId, $fromUserId, $targetUserIds, $message);
+
         return ApiResponse::success(null, "已推送给{$created}位管理员");
+    }
+
+    /**
+     * 批量写入推送记录，返回实际新增条数
+     *
+     * 整体包裹事务：任一目标写入失败即全部回滚，避免「部分人收到、部分人没收到」
+     * 却提示推送成功的中间状态。已存在的推送记录跳过，唯一索引冲突同样按跳过处理，
+     * 以兼容并发重复提交。
+     */
+    private function createPushes(int $noteId, int $fromUserId, array $targetUserIds, string $message): int
+    {
+        $created = 0;
+
+        DB::transaction(function () use ($noteId, $fromUserId, $targetUserIds, $message, &$created) {
+            foreach ($targetUserIds as $toUserId) {
+                $exists = Push::where('note_id', $noteId)
+                    ->where('to_admin_user_id', $toUserId)
+                    ->exists();
+
+                if ($exists) {
+                    continue;
+                }
+
+                try {
+                    Push::create([
+                        'note_id' => $noteId,
+                        'from_admin_user_id' => $fromUserId,
+                        'to_admin_user_id' => $toUserId,
+                        'message' => $message,
+                    ]);
+                    $created++;
+                } catch (QueryException $e) {
+                    // 并发下另一请求已插入同一 (note_id, to_admin_user_id)，由唯一索引拦截，按已推送处理
+                    if (!$this->isDuplicateKeyError($e)) {
+                        throw $e;
+                    }
+                }
+            }
+        });
+
+        return $created;
+    }
+
+    /**
+     * 判断是否为唯一键冲突异常（SQLSTATE 23000，MySQL 1062 与 SQLite 共用）
+     */
+    private function isDuplicateKeyError(QueryException $e): bool
+    {
+        return ($e->errorInfo[0] ?? '') === '23000';
     }
 
     /**
@@ -374,17 +464,46 @@ class NoteService
     }
 
     /**
+     * 获取内容最大字数
+     *
+     * 供表单页渲染字数上限与实时计数；createNote/updateNote 以同一来源二次校验，
+     * 避免前端提示与后端限制不一致。
+     */
+    public function getMaxContentLength(): int
+    {
+        return (int) $this->getConfig('max_content_length', self::DEFAULT_MAX_CONTENT_LENGTH);
+    }
+
+    /**
+     * 获取单次推送人数上限
+     *
+     * 供推送弹窗展示「已选 / 上限」计数；pushNote 以同一来源二次校验。
+     */
+    public function getMaxPushTargets(): int
+    {
+        return (int) $this->getConfig('max_push_targets', self::DEFAULT_MAX_PUSH_TARGETS);
+    }
+
+    /**
      * 读取应用配置
+     *
+     * 全部配置项一次性查出并整体缓存于 CONFIG_CACHE_KEY，设置页保存后由 SettingController 清除，
+     * 避免列表、创建、推送等高频路径每次读取配置都产生一次数据库查询。
      */
     protected function getConfig(string $key, $default = null)
     {
-        $fullCode = 'app_cmspro_notepad_' . $key;
-        $item = ConfigItem::where('code', $fullCode)->first();
+        $configs = Cache::remember(self::CONFIG_CACHE_KEY, self::CONFIG_CACHE_TTL, function () {
+            $codes = array_map(fn ($k) => 'app_cmspro_notepad_' . $k, self::CONFIG_KEYS);
 
-        if ($item && $item->value !== null && $item->value !== '') {
-            return is_numeric($item->value) ? (int) $item->value : $item->value;
+            return ConfigItem::whereIn('code', $codes)->pluck('value', 'code')->all();
+        });
+
+        $value = $configs['app_cmspro_notepad_' . $key] ?? null;
+
+        if ($value === null || $value === '') {
+            return $default;
         }
 
-        return $default;
+        return is_numeric($value) ? (int) $value : $value;
     }
 }

@@ -35,9 +35,11 @@
 <script src="{{ asset('CmsProUi/component/layui/layui.js') }}"></script>
 <script src="{{ asset('CmsProUi/component/pear/pear.js') }}"></script>
 <script>
-layui.use(['form', 'jquery'], function() {
+layui.use(['form', 'jquery', 'layer'], function() {
     var form = layui.form;
     var $ = layui.jquery;
+    var layer = layui.layer;
+    @include('cmspro.notepad::Admin._js_base')
 
     $.ajaxSetup({
         headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
@@ -51,7 +53,7 @@ layui.use(['form', 'jquery'], function() {
     });
 
     // 加载设置
-    $.get('/admin/cmspro/notepad/api/settings', function(res) {
+    $.get(NOTEPAD_BASE + '/api/settings', function(res) {
         if (res.code !== 0 || !res.data) {
             layer.msg('获取设置失败', { icon: 2 });
             return;
@@ -123,7 +125,7 @@ layui.use(['form', 'jquery'], function() {
 
         var loading = layer.load();
         $.ajax({
-            url: '/admin/cmspro/notepad/api/settings',
+            url: NOTEPAD_BASE + '/api/settings',
             type: 'PUT',
             contentType: 'application/json',
             data: JSON.stringify({ items: items }),
