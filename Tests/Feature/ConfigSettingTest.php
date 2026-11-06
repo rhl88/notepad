@@ -74,6 +74,31 @@ class ConfigSettingTest extends NotepadTestCase
             ->assertJsonPath('code', 0);
     }
 
+    /**
+     * 列表页渲染的默认分页条数取自配置项 per_page
+     *
+     * 回归点：Layui table 每次请求都会带上 page.limit，视图曾写死 limit: 20，
+     * 使后台配置的 per_page 在真实 UI 流程下永不生效（接口层的配置回落被前端参数覆盖）。
+     */
+    public function test_列表页默认分页条数取自配置(): void
+    {
+        $this->seedConfig('per_page', '5');
+        $this->createNotes(8);
+
+        $this->actingAs($this->admin, 'admin')
+            ->get('/admin/cmspro/notepad/notes')
+            ->assertOk()
+            ->assertSee("limit: parseInt('5', 10)", false);
+
+        // 模拟真实 UI 流程：Layui 携带页面渲染出的 limit 请求接口，条数应与配置一致
+        $this->actingAs($this->admin, 'admin')
+            ->getJson('/admin/cmspro/notepad/api/notes?limit=5')
+            ->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonCount(5, 'data')
+            ->assertJsonPath('count', 8);
+    }
+
     public function test_配置接口返回的code均为下划线前缀(): void
     {
         $this->seedConfig('per_page', '20');
