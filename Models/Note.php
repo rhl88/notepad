@@ -22,6 +22,12 @@ class Note extends BaseModel
         'create_time' => 'datetime:Y-m-d H:i:s',
         'update_time' => 'datetime:Y-m-d H:i:s',
         'status_changed_at' => 'datetime:Y-m-d H:i:s',
+        // 整型字段显式转型：部分 PDO 驱动下查询结果为字符串，
+        // 前端 n.status === 1 一类严格比较依赖此处，避免退化成 == 弱比较
+        'admin_user_id' => 'integer',
+        'status' => 'integer',
+        'priority' => 'integer',
+        'pinned' => 'integer',
     ];
 
     /**

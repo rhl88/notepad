@@ -9,18 +9,18 @@
     <link rel="stylesheet" href="{{ asset('Admin/css/admin.css') }}">
     <link rel="stylesheet" href="{{ asset('Admin/css/variables.css') }}">
     <link rel="stylesheet" href="{{ asset('Admin/css/reset.css') }}">
+    <style>
+        .layui-form-label {
+            width: unset;
+        }
+    </style>
 </head>
-<style>
-    .layui-form-label {
-        width: unset;
-    }
-</style>
 <body>
 <div class="pear-container">
     <div class="layui-card">
         <div class="layui-card-body">
             <form class="layui-form" lay-filter="settingForm" id="setting-form">
-                <input type="hidden" name="_token" value="{{ csrf_token() }}">
+                {{-- CSRF token 由 $.ajaxSetup 的 X-CSRF-TOKEN 头统一携带，表单无需再放隐藏域 --}}
                 <div id="setting-fields"></div>
                 <div class="layui-form-item" style="margin-top:20px;">
                     <div class="layui-input-block">
@@ -55,14 +55,15 @@ layui.use(['form', 'jquery', 'layer'], function() {
     // 加载设置
     $.get(NOTEPAD_BASE + '/api/settings', function(res) {
         if (res.code !== 0 || !res.data) {
-            layer.msg('获取设置失败', { icon: 2 });
+            layer.msg(res.message || '获取设置失败', { icon: 2 });
             return;
         }
 
         var groups = res.data;
         var html = '';
         groups.forEach(function(group) {
-            html += '<fieldset class="layui-elem-field"><legend>' + escapeHtml(group.name) + '</legend><div class="layui-field-box" style="padding:10px 15px;">';
+            html += '<fieldset class="layui-elem-field"><legend>' + escapeHtml(group.name) + '</legend>'
+                + '<div class="layui-field-box" style="padding:10px 15px;">';
             if (group.items) {
                 group.items.forEach(function(item) {
                     html += renderField(item);
@@ -72,6 +73,9 @@ layui.use(['form', 'jquery', 'layer'], function() {
         });
         $('#setting-fields').html(html);
         form.render();
+    }).fail(function(xhr) {
+        // 请求失败（无 manage 权限 403、会话过期等）时给出明确原因，避免设置区静默空白
+        layer.msg(notepadAjaxErrorText(xhr, '获取设置失败'), { icon: 2 });
     });
 
     function renderField(item) {
@@ -96,8 +100,15 @@ layui.use(['form', 'jquery', 'layer'], function() {
         return html;
     }
 
+    // 保存中标记：避免连点「保存」按钮造成配置重复提交
+    var saving = false;
+
     // 保存设置
     form.on('submit(saveSettings)', function(data) {
+        if (saving) {
+            return false;
+        }
+
         var formData = {};
         $(data.form).find('input[type!=checkbox],textarea,select').each(function() {
             var name = $(this).attr('name');
@@ -123,6 +134,7 @@ layui.use(['form', 'jquery', 'layer'], function() {
             }
         }
 
+        saving = true;
         var loading = layer.load();
         $.ajax({
             url: NOTEPAD_BASE + '/api/settings',
@@ -130,25 +142,24 @@ layui.use(['form', 'jquery', 'layer'], function() {
             contentType: 'application/json',
             data: JSON.stringify({ items: items }),
             success: function(res) {
-                layer.close(loading);
                 if (res.code === 0) {
                     layer.msg('保存成功', { icon: 1 });
                 } else {
                     layer.msg(res.message || '保存失败', { icon: 2 });
                 }
             },
-            error: function() {
+            error: function(xhr) {
+                layer.msg(notepadAjaxErrorText(xhr, '保存失败'), { icon: 2 });
+            },
+            complete: function() {
+                saving = false;
                 layer.close(loading);
-                layer.msg('请求失败', { icon: 2 });
             }
         });
         return false;
     });
 
-    function escapeHtml(str) {
-        if (str === null || str === undefined) return '';
-        return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-    }
+    // escapeHtml 由 _js_base 共享片段统一提供，此处不再重复定义
 });
 </script>
 </body>

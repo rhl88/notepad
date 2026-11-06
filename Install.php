@@ -108,7 +108,7 @@ class Install
                     DB::table('migrations')->where('migration', $migrationName)->delete();
                 } catch (\Throwable $e) {
                     Log::error('记事本应用迁移回滚失败', [
-                        'app' => 'cmspro.notepad',
+                        'app' => self::APP_ID,
                         'file' => basename($file),
                         'error' => $e->getMessage(),
                     ]);

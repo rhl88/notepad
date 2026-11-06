@@ -2,8 +2,8 @@
     便签详情弹窗及其配套操作（纯 JS 片段）
 
     由 notes/index.blade.php 与 dashboard.blade.php 在各自 layui.use 回调内 @include。
-    依赖宿主作用域的 $ / layer / escapeHtml / NOTEPAD_BASE，以及宿主在 include 之前
-    定义的 notepadRefresh()（详情弹窗关闭、评论成功、切换状态后调用，用于刷新列表或面板）。
+    依赖宿主作用域的 $ / layer / escapeHtml / NOTEPAD_BASE / notepadAjaxErrorText，以及宿主在
+    include 之前定义的 notepadRefresh()（详情弹窗关闭、评论成功、切换状态后调用，用于刷新列表或面板）。
 
     对外暴露的全局函数（供弹窗内联 onclick 调用）：
         openNoteDetail(noteId)    打开详情弹窗
@@ -119,8 +119,10 @@
     function buildNoteActionBar(n) {
         var html = '<hr><div class="layui-form" lay-filter="detailForm">';
         html += '<div class="layui-form-item"><div class="layui-input-block" style="margin-left:0;">';
+        // maxlength 与 NoteController::COMMENT_MAX_LENGTH 同源；本片段被详情页与仪表盘两个宿主共用，
+        // 宿主控制器不下发该常量，故此处按字面量书写，调整上限时须与后端验证规则一并修改
         html += '<input type="text" id="comment-input" placeholder="输入评论内容..." '
-            + 'class="layui-input" style="display:inline-block;width:calc(100% - 80px);">';
+            + 'class="layui-input" maxlength="1000" style="display:inline-block;width:calc(100% - 80px);">';
         html += '<button class="layui-btn layui-btn-sm" onclick="submitComment(' + n.id + ')" '
             + 'style="margin-left:5px;">评论</button>';
         html += '</div></div>';
@@ -159,24 +161,31 @@
     window.openNoteDetail = function (noteId) {
         var loading = layer.load();
 
-        $.get(NOTEPAD_BASE + '/api/notes/' + noteId, function (res) {
-            layer.close(loading);
-            if (res.code !== 0 || !res.data) {
-                layer.msg(res.message || '获取详情失败', { icon: 2 });
-                return;
-            }
-            layer.open({
-                type: 1,
-                title: '便签详情',
-                area: ['650px', '90%'],
-                shade: [0.5, '#000'],
-                shadeClose: 0,
-                content: buildNoteDetailHtml(res.data),
-                end: function () {
-                    notepadRefresh();
+        // 遮罩统一在 always 中关闭：请求失败（如无权限 403、网络中断）时同样能收起，避免遮罩卡死
+        $.get(NOTEPAD_BASE + '/api/notes/' + noteId)
+            .done(function (res) {
+                if (res.code !== 0 || !res.data) {
+                    layer.msg(res.message || '获取详情失败', { icon: 2 });
+                    return;
                 }
+                layer.open({
+                    type: 1,
+                    title: '便签详情',
+                    area: ['650px', '90%'],
+                    shade: [0.5, '#000'],
+                    shadeClose: 0,
+                    content: buildNoteDetailHtml(res.data),
+                    end: function () {
+                        notepadRefresh();
+                    }
+                });
+            })
+            .fail(function (xhr) {
+                layer.msg(notepadAjaxErrorText(xhr, '获取详情失败'), { icon: 2 });
+            })
+            .always(function () {
+                layer.close(loading);
             });
-        });
     };
 
     /**
@@ -203,7 +212,9 @@
                 layer.msg('评论成功', { icon: 1, time: 1000 });
                 setTimeout(function () { layer.closeAll(); notepadRefresh(); }, 800);
             },
-            error: function () { layer.msg('请求失败', { icon: 2 }); }
+            error: function (xhr) {
+                layer.msg(notepadAjaxErrorText(xhr, '评论失败'), { icon: 2 });
+            }
         });
     };
 
@@ -224,6 +235,8 @@
                 layer.msg(res.message || '状态已更新', { icon: 1, time: 1000 });
                 setTimeout(function () { layer.closeAll(); notepadRefresh(); }, 800);
             },
-            error: function () { layer.msg('请求失败', { icon: 2 }); }
+            error: function (xhr) {
+                layer.msg(notepadAjaxErrorText(xhr, '操作失败'), { icon: 2 });
+            }
         });
     };

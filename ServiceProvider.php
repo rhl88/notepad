@@ -9,14 +9,6 @@ use Illuminate\Support\ServiceProvider as BaseServiceProvider;
 
 class ServiceProvider extends BaseServiceProvider
 {
-    public function register(): void
-    {
-        $this->mergeConfigFrom(
-            base_path('app/Apps/CmsproNotepad/Config/notepad.php'),
-            'apps.cmspro.notepad'
-        );
-    }
-
     public function boot(): void
     {
         $this->registerMiddlewareAlias();
@@ -51,19 +43,19 @@ class ServiceProvider extends BaseServiceProvider
         Route::prefix('admin/cmspro/notepad')
             ->middleware(['web', 'auth:admin'])
             ->namespace('App\Apps\CmsproNotepad\Controllers\Admin')
-            ->group(base_path('app/Apps/CmsproNotepad/Routes/admin.php'));
+            ->group(__DIR__ . '/Routes/admin.php');
 
         // 应用后台 API 路由（/api/admin/cmspro/notepad）：WebOS 桌面小工具等站内数据接口
         Route::prefix('api/admin/cmspro/notepad')
             ->middleware(['web', 'auth:admin'])
             ->namespace('App\Apps\CmsproNotepad\Controllers\Admin')
-            ->group(base_path('app/Apps/CmsproNotepad/Routes/admin_api.php'));
+            ->group(__DIR__ . '/Routes/admin_api.php');
     }
 
     protected function loadViews(): void
     {
         $this->loadViewsFrom(
-            base_path('app/Apps/CmsproNotepad/Views'),
+            __DIR__ . '/Views',
             'cmspro.notepad'
         );
     }

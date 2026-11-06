@@ -131,8 +131,8 @@
                     renderNoteList('#my-notes-list', myNotes, renderNoteItem, EMPTY_MY_NOTES);
                     renderNoteList('#received-notes-list', received, renderReceivedItem, EMPTY_RECEIVED);
                 },
-                error: function() {
-                    layer.msg('便签摘要加载失败', {icon: 2, time: 1500});
+                error: function(xhr) {
+                    layer.msg(notepadAjaxErrorText(xhr, '便签摘要加载失败'), {icon: 2, time: 1500});
                 }
             });
         }
@@ -234,14 +234,23 @@
             });
         };
 
+        // 快速创建便签的进行中标记：避免连点按钮或连按回车重复创建同一标题的便签
+        var quickAdding = false;
+
         // 快速创建便签
         window.quickAddNote = function() {
+            if (quickAdding) {
+                return;
+            }
+
             var input = $('#quick-note-input');
             var title = input.val().trim();
             if (!title) {
                 layer.msg('请输入便签标题', {icon: 0, time: 1000});
                 return;
             }
+
+            quickAdding = true;
             $.ajax({
                 url: NOTEPAD_BASE + '/api/notes',
                 type: 'POST',
@@ -258,23 +267,26 @@
                     // 不再前端拼 DOM 与本地时间，避免日期格式偏离 Y-m-d H:i:s 规范
                     loadSummary();
                 },
-                error: function() {
-                    layer.msg('请求失败', {icon: 2, time: 1500});
+                error: function(xhr) {
+                    layer.msg(notepadAjaxErrorText(xhr, '创建失败'), {icon: 2, time: 1500});
+                },
+                complete: function() {
+                    quickAdding = false;
+                    // 焦点交回输入框，便于连续录入下一条
+                    input.trigger('focus');
                 }
             });
         };
 
-        // 回车快捷创建
+        // 回车快捷创建（以 e.key 判断，e.keyCode 已被标准废弃）
         $('#quick-note-input').on('keydown', function(e) {
-            if (e.keyCode === 13) {
+            if (e.key === 'Enter') {
                 e.preventDefault();
                 quickAddNote();
             }
         });
 
-        function escapeHtml(str) {
-            if (!str) return '';
-            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-        }
+        // escapeHtml 由 _js_base 共享片段统一提供，此处不再重复定义
+        // （原本地实现为弱版本：数字 0 会被吞成空串，且缺单引号转义）
     });
 </script>

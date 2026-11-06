@@ -2,7 +2,8 @@
     推送便签弹窗（共享片段）
 
     由 notes/index.blade.php 与 dashboard.blade.php 在各自 layui.use 回调内 @include，
-    依赖宿主作用域中的 $ / form / layer / escapeHtml，并由宿主控制器下发 $maxPushTargets。
+    依赖宿主作用域中的 $ / form / layer / escapeHtml / NOTEPAD_BASE / notepadAjaxErrorText，
+    并由宿主控制器下发 $maxPushTargets。
     调用方式：openPushDialog(noteId)
 --}}
     // 单次推送人数上限，与后端 NoteService::pushNote 校验同源（配置项 max_push_targets）
@@ -45,29 +46,36 @@
     window.openPushDialog = function (noteId) {
         var loading = layer.load();
 
-        $.get(NOTEPAD_BASE + '/api/admin-users', function (res) {
-            layer.close(loading);
-            if (res.code !== 0 || !res.data) {
-                layer.msg('获取管理员列表失败', { icon: 2 });
-                return;
-            }
-            layer.open({
-                type: 1,
-                title: '推送便签',
-                area: ['500px', '470px'],
-                shade: [0.5, '#000'],
-                shadeClose: 0,
-                content: buildPushDialogHtml(res.data),
-                btn: ['推送', '取消'],
-                success: function () {
-                    form.render('checkbox');
-                    updatePushSelectedCount();
-                },
-                btn1: function (index) {
-                    return submitPush(index, noteId);
+        // 管理员列表接口挂 push 权限，无权限时会返回 403：遮罩统一在 always 中关闭，避免弹窗卡死
+        $.get(NOTEPAD_BASE + '/api/admin-users')
+            .done(function (res) {
+                if (res.code !== 0 || !res.data) {
+                    layer.msg(res.message || '获取管理员列表失败', { icon: 2 });
+                    return;
                 }
+                layer.open({
+                    type: 1,
+                    title: '推送便签',
+                    area: ['500px', '470px'],
+                    shade: [0.5, '#000'],
+                    shadeClose: 0,
+                    content: buildPushDialogHtml(res.data),
+                    btn: ['推送', '取消'],
+                    success: function () {
+                        form.render('checkbox');
+                        updatePushSelectedCount();
+                    },
+                    btn1: function (index) {
+                        return submitPush(index, noteId);
+                    }
+                });
+            })
+            .fail(function (xhr) {
+                layer.msg(notepadAjaxErrorText(xhr, '获取管理员列表失败'), { icon: 2 });
+            })
+            .always(function () {
+                layer.close(loading);
             });
-        });
     };
 
     /**
@@ -114,6 +122,9 @@
         return html;
     }
 
+    /** 推送提交进行中标记，避免连点「推送」按钮造成同一便签被重复推送 */
+    var pushSubmitting = false;
+
     /**
      * 提交推送
      *
@@ -122,6 +133,10 @@
      * @returns {boolean} 恒为 false，阻止 layer 自动关闭弹窗（成功后由回调显式关闭）
      */
     function submitPush(index, noteId) {
+        if (pushSubmitting) {
+            return false;
+        }
+
         var checked = [];
         $('input[name="target_users"]:checked').each(function () {
             checked.push(parseInt($(this).val(), 10));
@@ -136,6 +151,7 @@
             return false;
         }
 
+        pushSubmitting = true;
         $.ajax({
             url: NOTEPAD_BASE + '/api/notes/' + noteId + '/push',
             type: 'POST',
@@ -149,7 +165,12 @@
                     layer.msg(res.message || '推送失败', { icon: 2 });
                 }
             },
-            error: function () { layer.msg('请求失败', { icon: 2 }); }
+            error: function (xhr) {
+                layer.msg(notepadAjaxErrorText(xhr, '推送失败'), { icon: 2 });
+            },
+            complete: function () {
+                pushSubmitting = false;
+            }
         });
 
         return false;

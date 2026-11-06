@@ -19,6 +19,9 @@ class NoteComment extends BaseModel
     protected $casts = [
         'create_time' => 'datetime:Y-m-d H:i:s',
         'update_time' => 'datetime:Y-m-d H:i:s',
+        // 整型字段显式转型：前端判断「是否本人评论」时的严格比较依赖此处
+        'note_id' => 'integer',
+        'admin_user_id' => 'integer',
     ];
 
     /**

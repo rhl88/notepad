@@ -86,18 +86,40 @@
                         <div class="layui-form-item">
                             <label class="layui-form-label">标题</label>
                             <div class="layui-input-block">
-                                <input type="text" id="title" name="title" lay-verify="required" lay-reqtext="请输入标题" placeholder="请输入便签标题" class="layui-input" maxlength="200" autocomplete="off">
-                                <span class="char-count" id="title-count">0 / 200</span>
+                                <input type="text" id="title" name="title" lay-verify="required" lay-reqtext="请输入标题"
+                                    placeholder="请输入便签标题" class="layui-input"
+                                    maxlength="{{ $titleMaxLength }}" autocomplete="off">
+                                <span class="char-count" id="title-count">0 / {{ $titleMaxLength }}</span>
                             </div>
                         </div>
-                        <div class="layui-form-item">
-                            <label class="layui-form-label">优先级</label>
-                            <div class="layui-input-block">
-                                <select id="priority" name="priority" lay-filter="priority">
-                                    <option value="0">普通</option>
-                                    <option value="1">重要</option>
-                                    <option value="2">紧急</option>
-                                </select>
+                        {{-- 优先级与置顶同行显示。
+                             必须用 xs 栅格而非 md：本页在 layer iframe 弹窗内打开，宽度仅 600px
+                             （见 notes/index.blade.php 的 openNoteForm area 配置），而 Layui 的
+                             .layui-col-md6{width:50%} 定义在 @media (min-width:992px) 内，
+                             iframe 自身视口不足 992px 时该宽度不生效，两列会各自撑满整行而上下堆叠；
+                             .layui-col-xs6 无媒体查询限制，任意宽度下恒为 50%。
+                             另 .layui-form-item 自带 clear:both，故必须用栅格列包裹才能并排。 --}}
+                        <div class="layui-row">
+                            <div class="layui-col-xs6">
+                                <div class="layui-form-item">
+                                    <label class="layui-form-label">优先级</label>
+                                    <div class="layui-input-block">
+                                        <select id="priority" name="priority" lay-filter="priority">
+                                            <option value="0">普通</option>
+                                            <option value="1">重要</option>
+                                            <option value="2">紧急</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="layui-col-xs6">
+                                <div class="layui-form-item">
+                                    <label class="layui-form-label">置顶</label>
+                                    <div class="layui-input-block">
+                                        <input type="checkbox" id="pinned" name="pinned"
+                                            lay-skin="switch" lay-text="是|否" value="1">
+                                    </div>
+                                </div>
                             </div>
                         </div>
                         <div class="layui-form-item">
@@ -110,12 +132,6 @@
                                 <span class="color-picker" style="background:#4caf50;" data-color="#4caf50" onclick="selectColor(this)"></span>
                                 <span class="color-picker" style="background:#2196f3;" data-color="#2196f3" onclick="selectColor(this)"></span>
                                 <span class="color-picker" style="background:#9c27b0;" data-color="#9c27b0" onclick="selectColor(this)"></span>
-                            </div>
-                        </div>
-                        <div class="layui-form-item">
-                            <label class="layui-form-label">置顶</label>
-                            <div class="layui-input-block">
-                                <input type="checkbox" id="pinned" name="pinned" lay-skin="switch" lay-text="是|否" value="1">
                             </div>
                         </div>
                         <div class="layui-form-item layui-form-text">
@@ -176,8 +192,8 @@
         var editId = resolveEditId();
         var isEdit = !!editId;
 
-        // 标题上限与后端 max:200 校验一致；内容上限由后端按配置项 max_content_length 下发
-        var TITLE_MAX = 200;
+        // 标题与内容上限均由后端下发：标题为控制器类常量，内容取配置项 max_content_length
+        var TITLE_MAX = parseInt('{{ $titleMaxLength }}', 10);
         var CONTENT_MAX = parseInt('{{ $maxContentLength }}', 10);
 
         /**
@@ -190,7 +206,9 @@
             var $count = $(countSelector);
 
             function refresh() {
-                var len = $input.val().length;
+                // 按码点计数（Array.from），与后端验证规则的 mb_strlen 口径一致；
+                // 直接用 .length 会把 emoji 等代理对算作 2 个字符，导致提示提前触顶
+                var len = Array.from($input.val()).length;
                 $count.text(len + ' / ' + max);
                 $count.toggleClass('over', len >= max);
             }
@@ -263,7 +281,9 @@
                         layer.msg(res.message || '获取数据失败', { icon: 2, time: 1500 });
                     }
                 },
-                error: function () { layer.msg('请求失败', { icon: 2, time: 1500 }); },
+                error: function (xhr) {
+                    layer.msg(notepadAjaxErrorText(xhr, '获取数据失败'), { icon: 2, time: 1500 });
+                },
                 complete: function () {
                     layer.close(loading);
                     setSubmitDisabled(false);
@@ -304,6 +324,9 @@
             var url = isEdit ? NOTEPAD_BASE + '/api/notes/' + editId : NOTEPAD_BASE + '/api/notes';
             var method = isEdit ? 'PUT' : 'POST';
             data.field.pinned = data.field.pinned ? 1 : 0;
+
+            // 提交期间禁用提交按钮，避免连点造成同一便签被重复新增或重复提交更新
+            setSubmitDisabled(true);
             $.ajax({
                 url: url,
                 type: method,
@@ -324,7 +347,13 @@
                         layer.msg(res.message || '操作失败', { icon: 2, time: 1500 });
                     }
                 },
-                error: function () { layer.msg('请求失败', { icon: 2, time: 1500 }); }
+                error: function (xhr) {
+                    // 422 验证失败时展示后端返回的具体字段错误（如标题超长），而非笼统的「请求失败」
+                    layer.msg(notepadAjaxErrorText(xhr, '操作失败'), { icon: 2, time: 1500 });
+                },
+                complete: function () {
+                    setSubmitDisabled(false);
+                }
             });
             return false;
         });

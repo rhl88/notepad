@@ -14,6 +14,9 @@ class NoteController extends Controller
     /** 便签标记颜色白名单，与 Views/Admin/notes/form.blade.php 颜色选择器保持一致 */
     private const COLOR_WHITELIST = ['', '#ff5722', '#ff9800', '#4caf50', '#2196f3', '#9c27b0'];
 
+    /** 便签标题长度上限，由表单页下发给前端做同源提示 */
+    private const TITLE_MAX_LENGTH = 200;
+
     /** 评论内容长度上限 */
     private const COMMENT_MAX_LENGTH = 1000;
 
@@ -35,8 +38,10 @@ class NoteController extends Controller
      */
     public function index()
     {
-        // 推送人数上限下发到页面，供推送弹窗展示「已选 / 上限」计数
+        // 分页条数与推送人数上限下发到页面：前者供 Layui table 的 page.limit 使用，
+        // 与列表接口的分页解析同源（配置项 per_page），后者供推送弹窗展示「已选 / 上限」计数
         return view('cmspro.notepad::Admin.notes.index', [
+            'perPage' => $this->noteService->getDefaultPerPage(),
             'maxPushTargets' => $this->noteService->getMaxPushTargets(),
         ]);
     }
@@ -50,7 +55,13 @@ class NoteController extends Controller
     }
 
     /**
-     * 编辑便签页面（数据由前端 AJAX 回填）
+     * 编辑便签页面
+     *
+     * $id 仅用于匹配路由 /notes/{id}/edit，方法体内不查询便签：表单数据由前端在页面
+     * 加载后调用 GET /api/notes/{id} 回填，因此编辑与新建可共用同一个 form 视图，
+     * 越权访问统一在接口层拦截。
+     *
+     * @param int|string $id 路由参数，不参与业务逻辑
      */
     public function edit($id)
     {
@@ -60,14 +71,18 @@ class NoteController extends Controller
     /**
      * 表单页视图数据
      *
-     * 内容字数上限来自应用配置项 max_content_length，由后端下发而非前端另调设置接口
+     * 标题上限为控制器类常量，与 store/update 的验证规则同源；内容上限来自应用配置项
+     * max_content_length。两者均由后端下发而非前端另调设置接口
      * （/api/settings 挂 manage 权限，仅有 create 权限的用户调用会被拒）。
      *
      * @return array<string, int>
      */
     private function formViewData(): array
     {
-        return ['maxContentLength' => $this->noteService->getMaxContentLength()];
+        return [
+            'titleMaxLength' => self::TITLE_MAX_LENGTH,
+            'maxContentLength' => $this->noteService->getMaxContentLength(),
+        ];
     }
 
     /**
@@ -127,7 +142,7 @@ class NoteController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'title' => 'required|string|max:200',
+            'title' => 'required|string|max:' . self::TITLE_MAX_LENGTH,
             'content' => 'nullable|string',
             'priority' => 'nullable|integer|in:0,1,2',
             'color' => ['nullable', 'string', 'max:20', Rule::in(self::COLOR_WHITELIST)],
@@ -152,7 +167,7 @@ class NoteController extends Controller
     public function update(Request $request, $id)
     {
         $validated = $request->validate([
-            'title' => 'sometimes|required|string|max:200',
+            'title' => 'sometimes|required|string|max:' . self::TITLE_MAX_LENGTH,
             'content' => 'sometimes|nullable|string',
             'priority' => 'sometimes|nullable|integer|in:0,1,2',
             'color' => ['sometimes', 'nullable', 'string', 'max:20', Rule::in(self::COLOR_WHITELIST)],

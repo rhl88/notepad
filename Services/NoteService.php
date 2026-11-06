@@ -33,10 +33,10 @@ class NoteService
     /** 每页条数硬上限，与 SettingController 中 per_page 的可写范围一致 */
     private const MAX_PER_PAGE = 100;
 
-    /** max_content_length 配置缺失时的兜底值，与 Config/notepad.php 默认值一致 */
+    /** max_content_length 配置缺失时的兜底值，类常量为该配置项唯一默认来源 */
     private const DEFAULT_MAX_CONTENT_LENGTH = 5000;
 
-    /** max_push_targets 配置缺失时的兜底值，与 Config/notepad.php 默认值一致 */
+    /** max_push_targets 配置缺失时的兜底值，类常量为该配置项唯一默认来源 */
     private const DEFAULT_MAX_PUSH_TARGETS = 10;
 
     /**
@@ -93,15 +93,9 @@ class NoteService
         $query->orderByDesc('pinned')->orderByDesc('priority')->orderByDesc('id');
         $result = $query->paginate($perPage);
 
-        $items = $result->items();
-        $pagination = [
-            'total' => $result->total(),
-            'current_page' => $result->currentPage(),
-            'per_page' => $result->perPage(),
-            'last_page' => $result->lastPage(),
-        ];
-
-        return ApiResponse::success(['items' => $items, 'pagination' => $pagination]);
+        // items 无需重塑，直接复用框架分页响应构造器；
+        // 其输出结构（data.items + data.pagination 四键）与前端约定完全一致
+        return ApiResponse::paginate($result);
     }
 
     /**
@@ -137,6 +131,8 @@ class NoteService
             ];
         }
 
+        // 收到的便签需重塑 items（附带推送人精简信息），无法整体复用 ApiResponse::paginate()，
+        // 故分页元数据在此内联构造，键名与框架保持一致
         $pagination = [
             'total' => $result->total(),
             'current_page' => $result->currentPage(),
@@ -299,6 +295,8 @@ class NoteService
      */
     public function batchDelete(array $ids, int $adminUserId): array
     {
+        // 前置守卫：未选择任何便签时直接返回，避免发起一次无谓的归属查询；
+        // 错误体与下方「所选便签均不属于当前管理员」分支保持一致，前端提示统一
         if (empty($ids)) {
             return ApiResponse::error(400, '请选择要删除的便签');
         }
@@ -482,6 +480,17 @@ class NoteService
     public function getMaxPushTargets(): int
     {
         return (int) $this->getConfig('max_push_targets', self::DEFAULT_MAX_PUSH_TARGETS);
+    }
+
+    /**
+     * 获取列表默认每页条数
+     *
+     * 供列表页渲染 Layui table 的 page.limit；列表接口以同一来源解析分页参数，
+     * 避免前端写死 limit 使配置项 per_page 永不生效。
+     */
+    public function getDefaultPerPage(): int
+    {
+        return $this->resolvePerPage(null);
     }
 
     /**

@@ -233,7 +233,7 @@ layui.use(['table', 'form', 'layer', 'jquery'], function () {
         }
     });
 
-    // 加载未读数量
+    // 加载未读数量（30 秒轮询）：请求失败时静默忽略，避免网络抖动或会话过期时反复弹出错误提示
     var _prevUnreadCount = 0;
     function loadUnreadCount() {
         $.get(NOTEPAD_BASE + '/api/notes/unread-count', function(res) {
@@ -306,7 +306,8 @@ layui.use(['table', 'form', 'layer', 'jquery'], function () {
         page: {
             layout: ['count', 'prev', 'page', 'next', 'limit'],
             groups: 5,
-            limit: 20,
+            // 默认每页条数由控制器下发（配置项 per_page），与列表接口的分页解析同源
+            limit: parseInt('{{ $perPage }}', 10),
             limits: [10, 20, 50, 100]
         },
         cols: currentTab === 'received' ? receivedCols : mineCols,
@@ -384,7 +385,11 @@ layui.use(['table', 'form', 'layer', 'jquery'], function () {
     });
 
     // 行操作事件
+    // lastToolAt 记录操作列按钮最近一次点击时刻，供 rowDouble 抑制双击叠加
+    var lastToolAt = 0;
     table.on('tool(note-table)', function(obj) {
+        lastToolAt = Date.now();
+
         if (obj.event === 'detail') {
             viewDetail(obj);
         } else if (obj.event === 'edit') {
@@ -396,6 +401,23 @@ layui.use(['table', 'form', 'layer', 'jquery'], function () {
         } else if (obj.event === 'togglePinned') {
             togglePinnedInRow(obj);
         }
+    });
+
+    /**
+     * 双击行查看便签详情
+     *
+     * 与操作列「详情」按钮同源复用 viewDetail，由其按当前 Tab 解析便签 ID
+     * （我的便签取 data.id，收到的便签取 data.note_id），避免两处逻辑漂移。
+     *
+     * 需抑制事件叠加：Layui 把 dblclick 委托在 tr 上，双击操作列按钮时，
+     * 按钮自身的 click 已触发 tool 事件（例如打开编辑弹窗），冒泡到 tr 后
+     * 又会触发本回调，两层弹窗同时出现。故紧跟 tool 事件 500ms 内的双击忽略。
+     */
+    table.on('rowDouble(note-table)', function(obj) {
+        if (Date.now() - lastToolAt < 500) {
+            return;
+        }
+        viewDetail(obj);
     });
 
     /**
@@ -504,9 +526,9 @@ layui.use(['table', 'form', 'layer', 'jquery'], function () {
                     layer.msg(res.message || '操作失败', { icon: 2 });
                 }
             },
-            error: function() {
+            error: function(xhr) {
                 layer.close(loading);
-                layer.msg('请求失败', { icon: 2 });
+                layer.msg(notepadAjaxErrorText(xhr, '操作失败'), { icon: 2 });
             }
         });
     }
@@ -531,9 +553,9 @@ layui.use(['table', 'form', 'layer', 'jquery'], function () {
                         layer.msg(res.message || '删除失败', { icon: 2 });
                     }
                 },
-                error: function() {
+                error: function(xhr) {
                     layer.close(loading);
-                    layer.msg('请求失败', { icon: 2 });
+                    layer.msg(notepadAjaxErrorText(xhr, '删除失败'), { icon: 2 });
                 }
             });
         });
@@ -567,18 +589,15 @@ layui.use(['table', 'form', 'layer', 'jquery'], function () {
                         layer.msg(res.message || '删除失败', { icon: 2 });
                     }
                 },
-                error: function() {
+                error: function(xhr) {
                     layer.close(loading);
-                    layer.msg('请求失败', { icon: 2 });
+                    layer.msg(notepadAjaxErrorText(xhr, '删除失败'), { icon: 2 });
                 }
             });
         });
     }
 
-    function escapeHtml(str) {
-        if (str === null || str === undefined) return '';
-        return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-    }
+    // escapeHtml 由 _js_base 共享片段统一提供，此处不再重复定义
 });
 </script>
 </body>

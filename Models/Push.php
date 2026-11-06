@@ -20,6 +20,11 @@ class Push extends BaseModel
     protected $casts = [
         'create_time' => 'datetime:Y-m-d H:i:s',
         'update_time' => 'datetime:Y-m-d H:i:s',
+        // 整型字段显式转型：前端 is_read 等严格比较依赖此处
+        'note_id' => 'integer',
+        'from_admin_user_id' => 'integer',
+        'to_admin_user_id' => 'integer',
+        'is_read' => 'integer',
     ];
 
     /**
