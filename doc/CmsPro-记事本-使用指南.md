@@ -1,7 +1,7 @@
 # CmsPro-记事本-使用指南
 
-> 版本：1.1.0 | 更新日期：2026-10-29
-> 应用版本：1.1.0 | 应用 ID：cmspro.notepad
+> 版本：1.2.0 | 更新日期：2026-10-29
+> 应用版本：1.2.0 | 应用 ID：cmspro.notepad
 
 ---
 
@@ -51,7 +51,12 @@
 
 ### 3.2 API 验证
 
-统一返回格式：成功 `{code:0, msg:"", count?, data}`；列表接口遵循 Layui table 规范；业务错误返回 `{code:1, msg:"错误信息"}` 或 `{code:403/404/400}`。
+接口返回格式分两类：
+
+- **标准格式**（除便签列表外的所有接口）：成功 `{code:0, message:"success", data, timestamp}`；失败 `{code:400|403|404, message:"错误信息"}`；表单字段校验失败返回 HTTP 422 + `{message, errors:{字段名:[提示]}}`。
+- **Layui 特例**（仅便签列表 `GET /api/notes`）：`{code:0, msg:"", count, data}`，`count` 为总条数，供前端表格直接渲染。
+
+后台页面上的操作失败提示会显示具体原因（无权限、字段未通过校验、登录已过期等），而非笼统的「请求失败」。
 
 ```bash
 # 便签列表（我的便签）
@@ -97,11 +102,11 @@ curl "http://www.cmspro.com/admin/cmspro/notepad/api/notes/unread-count"
 
 ```
 app/Apps/CmsproNotepad/
-├── ServiceProvider.php       # 服务提供者：路由/视图/配置/中间件别名 + 仪表盘接管扩展
+├── ServiceProvider.php       # 服务提供者：路由/视图/中间件别名 + 仪表盘接管扩展
 ├── Install.php               # 安装/卸载/升级：迁移 + manifest 配置三向同步 + 存量角色授权
 ├── manifest.json             # 应用元数据唯一声明源（菜单/权限/配置分组）
-├── Config/notepad.php        # 应用默认配置
 ├── Routes/admin.php          # 后台页面 + API 路由（逐路由挂权限中间件）
+├── Routes/admin_api.php      # 站内数据接口路由（/api/admin/cmspro/notepad，桌面小工具等）
 ├── Controllers/Admin/        # Dashboard / Note / Setting
 ├── Middleware/               # CheckNotepadPermission 应用级权限校验
 ├── Services/NoteService.php  # 便签业务逻辑层
@@ -157,3 +162,4 @@ app/Apps/CmsproNotepad/
 |------|------|--------|----------|
 | 1.0.0 | 2026-08-13 | 开发团队 | 初始版本（对应应用 v1.0.1） |
 | 1.1.0 | 2026-10-29 | 开发团队 | 补充权限相关说明：安装/升级自动为存量启用角色补授权限、后台验证表格增加「所需权限」列与 403 验证步骤、功能特性改为「双层权限控制」；新增交互体验与仪表盘局部刷新说明；目录结构补 `Middleware/`、`sql/`、`Tests/`、`manifest.json`；常见问题新增 Q7/Q8（对应应用 v1.1.0） |
+| 1.2.0 | 2026-10-29 | 开发团队 | 版本号对齐应用 v1.2.0；补充本版体验改进：操作失败时提示具体原因（无权限、字段未通过校验、登录已过期、页面已过期等）而非笼统的「请求失败」；推送、设置保存、快速创建便签与表单提交均增加防重复提交，连点不会产生重复数据；「每页便签数」设置项对便签列表与收到的便签同时生效；便签详情弹窗的评论输入框增加 1000 字上限提示，与后端校验一致 |

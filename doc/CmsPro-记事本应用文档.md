@@ -1,6 +1,6 @@
 # CmsPro-记事本应用文档
 
-> 版本：v1.1.0 | 创建日期：2026-08-12 | 更新日期：2026-10-29
+> 版本：v1.2.0 | 创建日期：2026-08-12 | 更新日期：2026-10-29
 > 适用系统：CmsPro v5.0.0+
 > 应用 ID：`cmspro.notepad`
 
@@ -117,13 +117,13 @@
 - **入参校验（Service 层）**：与配置项挂钩的可变上限及归属判断在 `NoteService` 内完成——内容长度按 `getMaxContentLength()` 用 `mb_strlen` 校验；推送目标先 `array_unique` 去重并 `intval` 归一，再按 `getMaxPushTargets()` 校验人数上限，并拒绝推送给自己、拒绝空目标；修改/删除/状态切换/评论/推送均校验便签归属（拥有者或被推送者）
 - **级联清理**：删除便签（单删/批量）在事务内先删评论与推送记录，保证数据一致性
 - **推送幂等**：`pushNote` 全程事务包裹；`app_cmspro_notepad_pushes` 建立 `(note_id, to_admin_user_id)` 唯一索引从数据库层杜绝重复推送，代码侧同时捕获唯一键冲突异常跳过，双保险
-- **配置驱动**：每页数量、内容长度、推送人数上限均从系统配置表读取（`app_cmspro_notepad_*`），未配置时回退 `Config/notepad.php` 默认值；一次请求内的多项配置读取合并为一次查询并缓存 10 分钟（`NoteService::CONFIG_CACHE_KEY`），设置保存成功后主动清除该缓存
+- **配置驱动**：每页数量、内容长度、推送人数上限均从系统配置表读取（`app_cmspro_notepad_*`），未配置时回退 `NoteService` 的 `DEFAULT_*` 类常量（代码内唯一默认来源）；一次请求内的多项配置读取合并为一次查询并缓存 10 分钟（`NoteService::CONFIG_CACHE_KEY`），设置保存成功后主动清除该缓存
 - **配置同步机制**：Install 脚本从 `manifest.json` 的 `config_groups` 同步配置到数据库（新增写默认值、已有仅更新结构保留用户值、已删除清理残留、空分组删除），卸载时全量清理
 - **统计聚合**：列表总数、待办数、收到数等统计走 `selectRaw('COUNT(*) ..., COALESCE(SUM(status = 0), 0) ...')` 单次聚合查询，不再先取全量数据在 PHP 中计数
 - **仪表盘扩展集成**：ServiceProvider 注册 `GET /admin/dashboard`（name `admin.dashboard`）接管系统原始仪表盘路由，`DashboardController::index()` 渲染框架原版 `admin.dashboard` 视图，将应用便签面板片段插入（HTML 插到「系统信息」卡片之前、脚本插到 `</body>` 之前，锚点缺失时兜底追加到页面末尾），卸载/停用应用后恢复系统默认
 - **集成降级**：便签面板的渲染与合并整体包在 `try/catch (Throwable)` 中，异常时记录 `Log::error` 并返回框架原版仪表盘，保证应用侧故障不会让整个后台首页打不开
 - **视图复用**：详情弹窗（`Views/Admin/notes/_note_detail.blade.php`）与推送弹窗（`_push_dialog.blade.php`）抽为共享片段，列表页与仪表盘面板同源复用；片段内所有样式均用内联 `style`，不依赖宿主页面的 CSS；应用基础路径收敛到 `Views/Admin/_js_base.blade.php` 的 `NOTEPAD_BASE` 常量，视图内不再散落硬编码 URL
-- **日期格式**：模型 `$casts` 统一输出 `Y-m-d H:i:s`；前端不使用 `toLocaleString` 等本地化格式化，列表与面板的时间一律由后端下发
+- **字段类型与日期格式**：模型 `$casts` 同时统一日期与整型输出——日期一律 `Y-m-d H:i:s`，前端不使用 `toLocaleString` 等本地化格式化，列表与面板的时间一律由后端下发；整型列（`status`、`priority`、`pinned`、`is_read`、`admin_user_id` 等）显式声明 `integer`，因为部分 PDO 驱动会把整型列返回为字符串，声明后前端才能对这些字段安全使用 `===` 严格比较
 
 ### 3.3 数据表结构
 
@@ -152,7 +152,10 @@
 
 ### 4.1 后台 API（前缀 `/admin/cmspro/notepad/api`，需登录后台）
 
-> 统一返回格式：成功 `{code:0, msg:"", count?, data}`；列表接口遵循 Layui table 规范（code/msg/count/data）；业务错误返回 `{code:1, msg:"错误信息"}` 或 `{code:403/404/400}`。
+> 返回格式分两类，不要混用：
+>
+> 1. **标准格式（绝大多数接口）**：由 `app/Http/Responses/ApiResponse.php` 统一构造，成功 `{code:0, message:"success", data, timestamp}`，失败 `{code:400|403|404, message:"错误信息", data:null, timestamp}`；分页型 `data` 形如 `{items:[...], pagination:{current_page, per_page, total, last_page}}`。表单类接口的字段校验失败由 Laravel 验证器直接抛出，返回 **HTTP 422** + `{message, errors:{字段名:[提示]}}`（不含 `code`），前端 `notepadAjaxErrorText()` 会拼接 `errors` 里的字段级提示。
+> 2. **Layui 特例（仅 `GET /api/notes`）**：为让 Layui table 直接消费，`NoteController::list()` 绕过 `ApiResponse`，返回 `{code:0, msg:"", count, data}`（失败时 `{code:1, msg:"错误信息", count:0, data:[]}`）。注意键名是 `msg` 而非 `message`，且 `count` 为总条数而非当前页条数。
 >
 > 下表「权限」列为权限码 `cmspro.notepad.{后缀}` 的后缀（见 2.3）；无对应权限时接口返回 HTTP 403 + `{code:40301}`。
 
@@ -231,13 +234,13 @@
 
 ### 6.1 配置来源
 
-配置项定义于 `manifest.json` 的 `config_groups`（记事本设置组），安装时由 Install 脚本同步到系统配置表（code 前缀 `app_cmspro_notepad_`）；代码默认值位于 `Config/notepad.php`（config key：`apps.cmspro.notepad`）。
+配置项定义于 `manifest.json` 的 `config_groups`（记事本设置组），安装时由 Install 脚本同步到系统配置表（code 前缀 `app_cmspro_notepad_`）；代码默认值由 `NoteService` 的 `DEFAULT_PER_PAGE` / `DEFAULT_MAX_CONTENT_LENGTH` / `DEFAULT_MAX_PUSH_TARGETS` 类常量提供，为唯一默认来源（应用不再注册 Laravel 配置文件）。
 
 ### 6.2 配置项
 
 | 配置项 code | 说明 | 类型 | 默认值 | 取值范围/说明 |
 |-------------|------|------|--------|---------------|
-| `per_page` | 每页便签数 | number | `20` | 便签列表每页显示数量（列表接口 limit 缺省时使用） |
+| `per_page` | 每页便签数 | number | `20` | 便签列表每页显示数量，列表页分页条数与接口 `limit` 缺省值均取此项 |
 | `max_content_length` | 内容最大长度 | number | `5000` | 便签内容最大字符数，创建/更新时校验，超出返回 400 |
 | `max_push_targets` | 推送人数上限 | number | `10` | 单次推送最多指定管理员数量 |
 
@@ -283,6 +286,9 @@ max_push_targets = 10
 
 | 版本 | 日期 | 更新人 | 变更内容 |
 |------|------|--------|----------|
+| v1.2.0 | 2026-10-29 | 开发团队 | 新增 WebOS 桌面小工具「桌面便签」（`sticky-note`，支持多实例，等同 macOS 桌面便签）：可在小工具面板选定某条便签常驻桌面，支持六色标记与内容直接编辑，写操作复用 `NoteService::updateNote()` 并按业务码映射 HTTP 400/403/404；新增 4 条 `api/admin/cmspro/notepad/widget/*` 路由与 `WidgetNoteTest` 19 用例。质量优化：`per_page` 配置项真正生效于「我的便签」与「收到的便签」分页；删除未被读取的死配置文件 `Config/notepad.php`，应用类常量成为唯一来源；前端 AJAX 错误处理统一收敛到共享片段的 `notepadAjaxErrorText()`，覆盖 401/403/404/419/500 与 Laravel 422 字段级详情，修复推送弹窗必然触发的 403 遮罩卡死；推送、设置保存、快速创建、表单提交四处补防重复提交；`escapeHtml()` 统一为强版本共享实现（原仪表盘本地弱实现会把数字 0 吞成空串且漏转单引号）；三个模型补齐整型 `$casts`，避免前端严格比较退化为弱比较；标题长度上限改由控制器常量 `TITLE_MAX_LENGTH` 单点下发给验证规则与表单；字数统计改按码点计数，与后端 `mb_strlen` 口径对齐；`getMyNotes()` 复用 `ApiResponse::paginate()` 消除重复的分页结构构造；设置页 `<style>` 归位到 `<head>` 内、移除死代码隐藏 `_token`。测试：共 82 个用例 315 条断言 |
+| v1.1.2 | 2026-10-29 | 开发团队 | 「便签概览」小工具支持三档尺寸（`1x1` / `2x1` / `2x2`，用户可拖拽右下角手柄吸附切换）与卡片内「新增便签」操作（弹输入框填写内容直接落库，标题取内容首行并按 30 显示宽度截断）；新增 `POST /widget/quick-note` 路由（`create` 权限）与 `QuickNoteTest` 6 用例 |
+| v1.1.1 | 2026-10-29 | 开发团队 | 新增 WebOS 桌面小工具「便签概览」（`sticky-overview`）：`manifest.json` 声明 `widgets`，新增 `Routes/admin_api.php` 与 `ServiceProvider` 的 `api/admin/cmspro/notepad` 路由组，`DashboardController::widgetSummary()` 输出小工具数据契约；新增 `WidgetSummaryTest` 4 用例 |
 | v1.1.0 | 2026-10-29 | 开发团队 | 安全与健壮性：新增应用级权限中间件 `CheckNotepadPermission` 并逐路由挂载，未授权页面渲染应用自有 403 页、接口返回 HTTP 403，安装/升级为存量启用角色自动补授权限；补齐 `store`/`update`/`batchDelete`/`addComment`/`push`/`settings` 入参校验，设置项 code 强制前缀与白名单校验；`pushNote` 全程事务化并为 `pushes` 表增加唯一索引与复合索引（含 SQL 升级/回滚脚本）；仪表盘集成增加异常降级，面板渲染失败时返回框架原版仪表盘；迁移失败改为记录日志并重抛。体验优化：详情弹窗与推送弹窗抽为共享片段供列表页与仪表盘同源复用，弹窗信息密度提升（颜色标记、置顶标识、更新时间、内容限高滚动）；仪表盘面板改为局部刷新不再整页 reload；表单增加标题/内容实时字数统计、回填 loading、未保存改动离开提醒；推送选人支持搜索与「已选/上限」计数；列表与面板增加空状态引导；应用基础路径收敛为 `NOTEPAD_BASE` 常量；统计改为 SQL 聚合、配置读取增加 10 分钟缓存。测试：新增 `NotepadTestCase` 与权限、推送、更新、配置设置等测试类，共 51 个用例 205 条断言 |
 | v1.0.3 | 2026-09-15 | 开发团队 | 仪表盘由整体替换改为扩展集成：渲染框架原版 `admin.dashboard` 并插入便签面板，框架后续新增的仪表盘特性（如官网动态）自动保留 |
 | v1.0.1 | 2026-08-20 | 开发团队 | 修复编辑便签时「标记颜色」未选择导致更新报错（color 为 null 违反列非空约束），后端统一将 color 空值规范化为空字符串；迁移表注释语句增加 MySQL 方言兼容判断，保证 SQLite 等测试环境可迁移 |
